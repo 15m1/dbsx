@@ -6,6 +6,7 @@ import { Inbox } from './components/Inbox'
 import { Timeline } from './components/Timeline'
 import { FocusModal } from './components/FocusModal'
 import { DataModal } from './components/DataModal'
+import { AiAddModal } from './components/AiAddModal'
 import { usePlanner } from './store'
 
 function App() {
@@ -16,6 +17,7 @@ function App() {
   const setFocusTaskId = usePlanner((s) => s.setFocusTaskId)
 
   const [dataOpen, setDataOpen] = useState(false)
+  const [aiOpen, setAiOpen] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const toastTimer = useRef<number | undefined>(undefined)
 
@@ -38,7 +40,7 @@ function App() {
 
   return (
     <div className="app">
-      <Header onOpenData={() => setDataOpen(true)} />
+      <Header onOpenData={() => setDataOpen(true)} onOpenAi={() => setAiOpen(true)} />
 
       <DateNav
         onCarryOver={() => carryOver(selectedDate)}
@@ -54,6 +56,7 @@ function App() {
 
       <FocusModal />
       {dataOpen && <DataModal onClose={() => setDataOpen(false)} onToast={showToast} />}
+      {aiOpen && <AiAddModal onClose={() => setAiOpen(false)} onToast={showToast} />}
 
       <div className={`toast ${toast ? 'show' : ''}`}>{toast}</div>
     </div>

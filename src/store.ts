@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { DragState, Task, TaskColor, Theme } from './types'
+import type { AiConfig, DragState, Task, TaskColor, Theme } from './types'
 import { addDays, todayKey } from './lib/date'
 
 const COLOR_POOL: TaskColor[] = [
@@ -11,6 +11,13 @@ const COLOR_POOL: TaskColor[] = [
   'rose',
   'lavender',
 ]
+
+/** AI 默认配置（OpenAI 兼容），用户可在界面内修改，存本地 */
+export const DEFAULT_AI_CONFIG: AiConfig = {
+  baseUrl: 'https://api.openai.com/v1',
+  apiKey: '',
+  model: 'gpt-4o-mini',
+}
 
 export function randomColor(): TaskColor {
   return COLOR_POOL[Math.floor(Math.random() * COLOR_POOL.length)]
@@ -70,11 +77,13 @@ interface PlannerState {
   selectedDate: string
   dragging: DragState | null
   focusTaskId: string | null
+  aiConfig: AiConfig
 
   setTheme: (theme: Theme) => void
   setSelectedDate: (date: string) => void
   setDragging: (d: DragState | null) => void
   setFocusTaskId: (id: string | null) => void
+  setAiConfig: (config: AiConfig) => void
 
   addTask: (p: {
     date: string
@@ -102,11 +111,13 @@ export const usePlanner = create<PlannerState>()(
       selectedDate: todayKey(),
       dragging: null,
       focusTaskId: null,
+      aiConfig: DEFAULT_AI_CONFIG,
 
       setTheme: (theme) => set({ theme }),
       setSelectedDate: (selectedDate) => set({ selectedDate }),
       setDragging: (dragging) => set({ dragging }),
       setFocusTaskId: (focusTaskId) => set({ focusTaskId }),
+      setAiConfig: (aiConfig) => set({ aiConfig }),
 
       addTask: (p) => {
         const id = genId()
@@ -172,7 +183,11 @@ export const usePlanner = create<PlannerState>()(
     }),
     {
       name: 'day-planner-storage',
-      partialize: (s) => ({ tasks: s.tasks, theme: s.theme }),
+      partialize: (s) => ({
+        tasks: s.tasks,
+        theme: s.theme,
+        aiConfig: s.aiConfig,
+      }),
     },
   ),
 )

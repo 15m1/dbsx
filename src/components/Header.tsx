@@ -1,12 +1,13 @@
-import { Database, Moon, Sun } from 'lucide-react'
+import { Database, Moon, Sparkles, Sun } from 'lucide-react'
 import { usePlanner } from '../store'
 import type { Theme } from '../types'
 
 interface Props {
   onOpenData: () => void
+  onOpenAi: () => void
 }
 
-export function Header({ onOpenData }: Props) {
+export function Header({ onOpenData, onOpenAi }: Props) {
   const theme = usePlanner((s) => s.theme)
   const setTheme = usePlanner((s) => s.setTheme)
 
@@ -25,6 +26,14 @@ export function Header({ onOpenData }: Props) {
         </div>
       </div>
       <div className="header-actions">
+        <button
+          className="icon-btn ai-btn"
+          title="AI 添加任务"
+          aria-label="AI 添加"
+          onClick={onOpenAi}
+        >
+          <Sparkles size={19} />
+        </button>
         <button
           className="icon-btn"
           title={theme === 'light' ? '切换到深夜模式' : '切换到日间模式'}

@@ -165,14 +165,19 @@ export function Timeline({ tasks, onFocus }: Props) {
     setEditTitle('')
   }
 
-  /* 从收集箱拖入 */
+  /* 从收集箱拖入（pointer 事件，触摸/鼠标通用） */
   useEffect(() => {
-    if (!dragging) return
-    const track = trackRef.current
-    if (!track) return
-    const onDragOver = (e: DragEvent) => {
-      e.preventDefault()
+    if (!dragging || dragging.from !== 'inbox') return
+    const onMove = (e: PointerEvent) => {
+      const track = trackRef.current
+      if (!track) return
       const rect = track.getBoundingClientRect()
+      const inTrack = e.clientY >= rect.top && e.clientY <= rect.bottom
+      if (!inTrack) {
+        dropPreviewRef.current = null
+        setDropPreview(null)
+        return
+      }
       const scrollTop = scrollRef.current?.scrollTop ?? 0
       const y = e.clientY - rect.top + scrollTop
       const raw = Math.round(y) + DAY_START
@@ -181,33 +186,34 @@ export function Timeline({ tasks, onFocus }: Props) {
       dropPreviewRef.current = { start: clamped, duration: 60 }
       setDropPreview(dropPreviewRef.current)
     }
-    const onDrop = (e: DragEvent) => {
-      e.preventDefault()
-      const id = e.dataTransfer?.getData('application/x-task')
+    const onUp = (e: PointerEvent) => {
+      const track = trackRef.current
       const p = dropPreviewRef.current
-      if (id && p) scheduleTask(id, p.start, p.duration)
+      if (track && p) {
+        const rect = track.getBoundingClientRect()
+        const inTrack = e.clientY >= rect.top && e.clientY <= rect.bottom
+        if (inTrack) scheduleTask(dragging.taskId, p.start, p.duration)
+      }
       dropPreviewRef.current = null
       setDropPreview(null)
       setDragging(null)
     }
-    const onLeave = () => {
-      dropPreviewRef.current = null
-      setDropPreview(null)
-    }
-    track.addEventListener('dragover', onDragOver)
-    track.addEventListener('drop', onDrop)
-    track.addEventListener('dragleave', onLeave)
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
     return () => {
-      track.removeEventListener('dragover', onDragOver)
-      track.removeEventListener('drop', onDrop)
-      track.removeEventListener('dragleave', onLeave)
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
     }
-  }, [dragging])
+  }, [dragging, scheduleTask, setDragging])
 
   const startDrag = (e: React.PointerEvent, t: Task, mode: 'move' | 'resize') => {
     e.preventDefault()
     e.stopPropagation()
-    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    try {
+      ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    } catch {
+      /* 合成/失效指针下忽略指针捕获，拖拽逻辑仍可用 */
+    }
     dragRef.current = {
       mode,
       taskId: t.id,

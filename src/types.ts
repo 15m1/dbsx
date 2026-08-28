@@ -29,3 +29,21 @@ export interface DragState {
   /** inbox = 从收集箱拖出；timeline = 在时间轴内拖动 */
   from: 'inbox' | 'timeline'
 }
+
+/** AI 添加功能：OpenAI 兼容接口配置（baseURL / apiKey / model 可配） */
+export interface AiConfig {
+  /** 例如 https://api.openai.com/v1，Mimo/其他厂商改成自己的地址 */
+  baseUrl: string
+  apiKey: string
+  model: string
+}
+
+/** AI 识别出的任务结果（预览阶段，尚未入库） */
+export interface AiDraft {
+  title: string
+  /** YYYY-MM-DD；无明确日期时为 null，落到收集箱 */
+  date: string | null
+  /** 当日分钟数（6:00=360）；无明确时间时为 null，不排程 */
+  start: number | null
+  duration: number
+}

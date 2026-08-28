@@ -1,11 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, Pencil, Play, Plus, Trash2 } from 'lucide-react'
 import { usePlanner } from '../store'
-import type { Task } from '../types'
+import type { Task, TaskColor } from '../types'
 
 interface Props {
   tasks: Task[]
   onFocus: (id: string) => void
+}
+
+interface GhostState {
+  x: number
+  y: number
+  title: string
+  color: TaskColor
 }
 
 export function Inbox({ tasks, onFocus }: Props) {
@@ -19,11 +26,50 @@ export function Inbox({ tasks, onFocus }: Props) {
   const [draft, setDraft] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingText, setEditingText] = useState('')
+  const [ghost, setGhost] = useState<GhostState | null>(null)
   const editRef = useRef<HTMLInputElement>(null)
+  const dragRef = useRef<{
+    taskId: string
+    startX: number
+    startY: number
+    moved: boolean
+  } | null>(null)
 
   useEffect(() => {
     if (editingId) editRef.current?.focus()
   }, [editingId])
+
+  /* 收集箱拖拽：跟手 ghost，触摸/鼠标通用 */
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      const d = dragRef.current
+      if (!d) return
+      if (!d.moved && Math.hypot(e.clientX - d.startX, e.clientY - d.startY) > 8) {
+        d.moved = true
+        setDragging({ taskId: d.taskId, from: 'inbox' })
+      }
+      if (d.moved) {
+        const task = usePlanner.getState().tasks.find((t) => t.id === d.taskId)
+        setGhost({
+          x: e.clientX + 12,
+          y: e.clientY + 12,
+          title: task?.title ?? '',
+          color: task?.color ?? 'apricot',
+        })
+      }
+    }
+    /* 松手时 ghost 清除由本组件负责；排程由 Timeline 的 pointerup 处理 */
+    const onUp = () => {
+      dragRef.current = null
+      setGhost(null)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+  }, [setDragging])
 
   const submitDraft = () => {
     const title = draft.trim()
@@ -45,6 +91,17 @@ export function Inbox({ tasks, onFocus }: Props) {
   }
 
   const cancelEdit = () => setEditingId(null)
+
+  const startCardDrag = (e: React.PointerEvent, t: Task) => {
+    if ((e.target as HTMLElement).closest('button')) return
+    e.preventDefault()
+    dragRef.current = {
+      taskId: t.id,
+      startX: e.clientX,
+      startY: e.clientY,
+      moved: false,
+    }
+  }
 
   return (
     <aside className="inbox">
@@ -100,17 +157,7 @@ export function Inbox({ tasks, onFocus }: Props) {
               className={`task-card ${t.done ? 'done' : ''}`}
               key={t.id}
               data-color={t.color}
-              draggable
-              onDragStart={(e) => {
-                e.dataTransfer?.setData('application/x-task', t.id)
-                if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
-                setDragging({ taskId: t.id, from: 'inbox' })
-                ;(e.currentTarget as HTMLElement).classList.add('dragging-src')
-              }}
-              onDragEnd={(e) => {
-                setDragging(null)
-                ;(e.currentTarget as HTMLElement).classList.remove('dragging-src')
-              }}
+              onPointerDown={(e) => startCardDrag(e, t)}
             >
               <div className="task-title">
                 <button
@@ -162,7 +209,17 @@ export function Inbox({ tasks, onFocus }: Props) {
         )}
       </div>
 
-      <div className="inbox-hint">把卡片拖到右侧时间轴，安排它的时段</div>
+      <div className="inbox-hint">按住卡片拖到右侧时间轴，安排它的时段</div>
+
+      {ghost && (
+        <div
+          className="drag-ghost"
+          data-color={ghost.color}
+          style={{ left: ghost.x, top: ghost.y }}
+        >
+          {ghost.title}
+        </div>
+      )}
     </aside>
   )
 }
