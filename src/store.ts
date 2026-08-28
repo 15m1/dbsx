@@ -1,7 +1,14 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { AiConfig, DragState, Task, TaskColor, Theme } from './types'
-import { addDays, todayKey } from './lib/date'
+import type {
+  AiConfig,
+  DragState,
+  RepeatRule,
+  Task,
+  TaskColor,
+  Theme,
+} from './types'
+import { addDays, parseKey, toDateKey, todayKey } from './lib/date'
 
 const COLOR_POOL: TaskColor[] = [
   'apricot',
@@ -49,6 +56,17 @@ export function sanitizeTasks(raw: unknown): Task[] | null {
     const id = typeof o.id === 'string' && o.id ? o.id : genId()
     const done = o.done === true
     const createdAt = typeof o.createdAt === 'number' ? o.createdAt : Date.now()
+    const tags = Array.isArray(o.tags)
+      ? (o.tags as unknown[]).filter((v): v is string => typeof v === 'string')
+      : undefined
+    const repeat =
+      o.repeat && typeof o.repeat === 'object'
+        ? sanitizeRepeat(o.repeat)
+        : undefined
+    const lastGenerated =
+      typeof o.lastGenerated === 'string' && DATE_KEY_RE.test(o.lastGenerated)
+        ? o.lastGenerated
+        : undefined
     out.push({
       id,
       title: o.title,
@@ -57,10 +75,40 @@ export function sanitizeTasks(raw: unknown): Task[] | null {
       duration: Math.round(Math.min(24 * 60, duration)),
       color,
       done,
+      tags,
+      repeat,
+      lastGenerated,
       createdAt,
     })
   }
   return out
+}
+
+function sanitizeRepeat(raw: unknown): RepeatRule | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const o = raw as Record<string, unknown>
+  const freq = o.freq
+  if (freq !== 'daily' && freq !== 'weekly' && freq !== 'monthly') return undefined
+  const until = typeof o.until === 'string' && DATE_KEY_RE.test(o.until) ? o.until : null
+  return { freq, until }
+}
+
+/** 返回 fromKey 之后紧随本次出现日期的下一个重复日期（不含 fromKey 本身） */
+export function nextOccurrence(freq: RepeatRule['freq'], fromKey: string): string {
+  const d = parseKey(fromKey)
+  if (freq === 'daily') {
+    d.setDate(d.getDate() + 1)
+  } else if (freq === 'weekly') {
+    d.setDate(d.getDate() + 7)
+  } else {
+    // monthly：保留"日"，跨月后若该日不存在则取当月最后一天
+    const day = d.getDate()
+    d.setDate(1)
+    d.setMonth(d.getMonth() + 1)
+    const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
+    d.setDate(Math.min(day, lastDay))
+  }
+  return toDateKey(d)
 }
 
 let idCounter = 0
@@ -91,12 +139,16 @@ interface PlannerState {
     start?: number | null
     duration?: number
     color?: TaskColor
+    tags?: string[]
+    repeat?: RepeatRule
   }) => string
   updateTask: (id: string, patch: Partial<Task>) => void
   deleteTask: (id: string) => void
   toggleDone: (id: string) => void
   /** 把收集箱任务排到时间轴 */
   scheduleTask: (id: string, start: number, duration?: number) => void
+  /** 拖放排序：把 fromId 移动到 toId 之前（仅限同一未排程集合内） */
+  reorderTask: (fromId: string, toId: string) => void
   /** 当日未完成任务顺延到次日 */
   carryOver: (fromKey: string) => void
   /** 导入数据（覆盖全部） */
@@ -132,6 +184,9 @@ export const usePlanner = create<PlannerState>()(
               duration: p.duration ?? 60,
               color: p.color ?? randomColor(),
               done: false,
+              tags: p.tags,
+              repeat: p.repeat,
+              lastGenerated: p.repeat ? p.date : undefined,
               createdAt: Date.now(),
             },
           ],
@@ -151,9 +206,32 @@ export const usePlanner = create<PlannerState>()(
         })),
 
       toggleDone: (id) =>
-        set((s) => ({
-          tasks: s.tasks.map((t) => (t.id === id ? { ...t, done: !t.done } : t)),
-        })),
+        set((s) => {
+          const t = s.tasks.find((x) => x.id === id)
+          if (!t) return s
+          // 重复任务：勾选完成 → 推进到下一次出现；取消完成 → 恢复本日
+          if (t.repeat) {
+            const next = nextOccurrence(t.repeat.freq, t.date)
+            // 已到最后一次（有 until 且 next 超期）→ 结束循环，只标记完成
+            if (t.repeat.until && next > t.repeat.until) {
+              return {
+                tasks: s.tasks.map((x) =>
+                  x.id === id ? { ...x, done: !x.done } : x,
+                ),
+              }
+            }
+            return {
+              tasks: s.tasks.map((x) =>
+                x.id === id
+                  ? { ...x, done: false, date: next, lastGenerated: next }
+                  : x,
+              ),
+            }
+          }
+          return {
+            tasks: s.tasks.map((x) => (x.id === id ? { ...x, done: !x.done } : x)),
+          }
+        }),
 
       scheduleTask: (id, start, duration) =>
         set((s) => ({
@@ -168,13 +246,34 @@ export const usePlanner = create<PlannerState>()(
           ),
         })),
 
+      reorderTask: (fromId, toId) =>
+        set((s) => {
+          if (fromId === toId) return s
+          const next = s.tasks.slice()
+          const fromIdx = next.findIndex((t) => t.id === fromId)
+          const toIdx = next.findIndex((t) => t.id === toId)
+          if (fromIdx < 0 || toIdx < 0) return s
+          // 限制：仅同一 date 且都未排程时才允许重排
+          const from = next[fromIdx]
+          const to = next[toIdx]
+          if (from.date !== to.date || from.start != null || to.start != null) {
+            return s
+          }
+          const [item] = next.splice(fromIdx, 1)
+          const target = next.findIndex((t) => t.id === toId)
+          next.splice(target, 0, item)
+          return { tasks: next }
+        }),
+
       carryOver: (fromKey) =>
         set((s) => {
           const toKey = addDays(fromKey, 1)
-          // 移动：未完成事项从当天迁到次日，当天不再保留
+          // 移动：未完成事项从当天迁到次日，当天不再保留（重复任务自行推进，不随顺延）
           return {
             tasks: s.tasks.map((t) =>
-              t.date === fromKey && !t.done ? { ...t, date: toKey } : t,
+              t.date === fromKey && !t.done && !t.repeat
+                ? { ...t, date: toKey }
+                : t,
             ),
           }
         }),

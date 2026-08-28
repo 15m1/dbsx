@@ -102,7 +102,7 @@ export async function parseTasksWithAI(
     let duration = Number(t.duration)
     if (!Number.isFinite(duration) || duration < 15) duration = 60
     duration = Math.min(Math.max(duration, 15), DAY_END - DAY_START)
-    // clamp 到时间轴范围内：起点不早于 6:00，终点不晚于 24:00
+    // clamp 到时间轴范围内：起点不早于 DAY_START，终点不晚于 24:00
     if (start != null) {
       start = Math.min(Math.max(DAY_START, start), DAY_END - duration)
     }

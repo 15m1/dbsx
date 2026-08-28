@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Check, Pencil, Play, Plus, Trash2 } from 'lucide-react'
 import { usePlanner } from '../store'
 import type { Task, TaskColor } from '../types'
+import { ColorPicker } from './ColorPicker'
 
 interface Props {
   tasks: Task[]
@@ -21,12 +22,15 @@ export function Inbox({ tasks, onFocus }: Props) {
   const deleteTask = usePlanner((s) => s.deleteTask)
   const toggleDone = usePlanner((s) => s.toggleDone)
   const setDragging = usePlanner((s) => s.setDragging)
+  const reorderTask = usePlanner((s) => s.reorderTask)
   const selectedDate = usePlanner((s) => s.selectedDate)
 
   const [draft, setDraft] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingText, setEditingText] = useState('')
   const [ghost, setGhost] = useState<GhostState | null>(null)
+  const [dropTarget, setDropTarget] = useState<string | null>(null)
+  const dropTargetRef = useRef<string | null>(null)
   const editRef = useRef<HTMLInputElement>(null)
   const dragRef = useRef<{
     taskId: string
@@ -39,7 +43,7 @@ export function Inbox({ tasks, onFocus }: Props) {
     if (editingId) editRef.current?.focus()
   }, [editingId])
 
-  /* 收集箱拖拽：跟手 ghost，触摸/鼠标通用 */
+  /* 收集箱拖拽：跟手 ghost + 列表内重排，触摸/鼠标通用 */
   useEffect(() => {
     const onMove = (e: PointerEvent) => {
       const d = dragRef.current
@@ -56,11 +60,24 @@ export function Inbox({ tasks, onFocus }: Props) {
           title: task?.title ?? '',
           color: task?.color ?? 'apricot',
         })
+        // 判断当前悬停在哪个收集箱卡片上，用于松手时重排
+        const el = document.elementFromPoint(e.clientX, e.clientY)
+        const card = el?.closest<HTMLElement>('.inbox-list .task-card')
+        const hoverId = card?.dataset['id'] ?? null
+        const next = hoverId && hoverId !== d.taskId ? hoverId : null
+        dropTargetRef.current = next
+        setDropTarget(next)
       }
     }
-    /* 松手时 ghost 清除由本组件负责；排程由 Timeline 的 pointerup 处理 */
+    /* 松手：优先在收集箱内重排；否则由 Timeline 处理排程 */
     const onUp = () => {
+      const d = dragRef.current
+      if (d && d.moved) {
+        const target = dropTargetRef.current
+        if (target) reorderTask(d.taskId, target)
+      }
       dragRef.current = null
+      setDropTarget(null)
       setGhost(null)
     }
     window.addEventListener('pointermove', onMove)
@@ -69,7 +86,7 @@ export function Inbox({ tasks, onFocus }: Props) {
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
     }
-  }, [setDragging])
+  }, [setDragging, reorderTask])
 
   const submitDraft = () => {
     const title = draft.trim()
@@ -154,8 +171,11 @@ export function Inbox({ tasks, onFocus }: Props) {
             </div>
           ) : (
             <div
-              className={`task-card ${t.done ? 'done' : ''}`}
+              className={`task-card ${t.done ? 'done' : ''} ${
+                dropTarget === t.id ? 'drop-indicator' : ''
+              }`}
               key={t.id}
+              data-id={t.id}
               data-color={t.color}
               onPointerDown={(e) => startCardDrag(e, t)}
             >
@@ -204,6 +224,10 @@ export function Inbox({ tasks, onFocus }: Props) {
                   <Trash2 size={14} />
                 </button>
               </div>
+              <ColorPicker
+                value={t.color}
+                onChange={(c) => updateTask(t.id, { color: c })}
+              />
             </div>
           ),
         )}

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, Play, Trash2 } from 'lucide-react'
+import { Check, Play, Trash2, X } from 'lucide-react'
 import { usePlanner } from '../store'
 import type { Task } from '../types'
-import { DAY_START, DAY_END, HOURS, minToLabel } from '../lib/time'
+import { DAY_START, DAY_END, HOURS, pad2, minToLabel } from '../lib/time'
 import { todayKey } from '../lib/date'
+import { ColorPicker } from './ColorPicker'
 
 interface Props {
   tasks: Task[] // 已排程（当天）
@@ -13,6 +14,7 @@ interface Props {
 interface DragInfo {
   mode: 'move' | 'resize' | 'create'
   taskId?: string
+  startX: number
   startY: number
   origStart: number
   origDuration: number
@@ -47,6 +49,15 @@ export function Timeline({ tasks, onFocus }: Props) {
 
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
+  const [editTime, setEditTime] = useState('06:00')
+  const [editEnd, setEditEnd] = useState('07:00')
+  const [editDuration, setEditDuration] = useState('60')
+  /* 编辑态重复规则：'none' | 'daily' | 'weekly' | 'monthly' */
+  const [editRepeat, setEditRepeat] = useState<'none' | 'daily' | 'weekly' | 'monthly'>('none')
+  /* 编辑态标签（逗号分隔输入） */
+  const [editTags, setEditTags] = useState('')
+  /* 编辑态卡片容器，用于判断失焦后焦点是否仍在卡片内 */
+  const editCardRef = useRef<HTMLDivElement>(null)
   const [dropPreview, setDropPreview] = useState<{ start: number; duration: number } | null>(null)
   const [now, setNow] = useState(() => Date.now())
   /* 让拖拽闭包始终拿到最新编辑中的卡片 id */
@@ -89,11 +100,19 @@ export function Timeline({ tasks, onFocus }: Props) {
       const minute = Math.round(y) + DAY_START
 
       if (d.mode === 'move' && d.taskId) {
+        // 只有移动超过阈值才算"拖动"，否则视为点击（进入编辑），避免误触搬家
+        if (!d.moved) {
+          if (Math.hypot(e.clientX - d.startX, e.clientY - d.startY) < 8) return
+          d.moved = true
+        }
         const start = Math.min(
           Math.max(DAY_START, minute),
           DAY_END - Math.max(d.origDuration, 15),
         )
         dragPreview.current = { id: d.taskId, start, duration: d.origDuration }
+        // 移动时实时同步到开始时间输入框
+        setEditTime(toHHMM(start))
+        setEditEnd(toHHMM(Math.min(DAY_END, start + d.origDuration)))
         setForceTick((n) => n + 1)
       } else if (d.mode === 'resize' && d.taskId) {
         const endMin = Math.min(DAY_END, Math.max(DAY_START, minute))
@@ -102,6 +121,9 @@ export function Timeline({ tasks, onFocus }: Props) {
           Math.max(15, endMin - d.origStart),
         )
         dragPreview.current = { id: d.taskId, start: d.origStart, duration }
+        // 同步到编辑态时长输入框，避免提交时被旧值覆盖
+        setEditDuration(String(duration))
+        setEditEnd(toHHMM(Math.min(DAY_END, d.origStart + duration)))
         setForceTick((n) => n + 1)
       } else if (d.mode === 'create') {
         const diff = Math.abs(e.clientY - d.startY)
@@ -112,7 +134,7 @@ export function Timeline({ tasks, onFocus }: Props) {
           const duration = Math.max(30, end - start)
           dragPreview.current = {
             id: 'create-preview',
-            start: Math.min(DAY_START, start),
+            start: Math.max(DAY_START, start),
             duration,
           }
           setForceTick((n) => n + 1)
@@ -127,8 +149,11 @@ export function Timeline({ tasks, onFocus }: Props) {
 
       if (d.mode === 'create' && d.moved && p && p.id === 'create-preview') {
         createAt(p.start, p.duration)
-      } else if ((d.mode === 'move' || d.mode === 'resize') && d.taskId && p) {
+      } else if (d.mode === 'resize' && d.taskId && p) {
         scheduleTask(d.taskId, p.start, p.duration)
+      } else if (d.mode === 'move' && d.taskId) {
+        if (d.moved && p) scheduleTask(d.taskId, p.start, p.duration)
+        else startEditing(d.taskId)
       } else if (d.mode === 'create' && !d.moved) {
         const track = trackRef.current
         if (track) {
@@ -163,6 +188,12 @@ export function Timeline({ tasks, onFocus }: Props) {
     const id = addTask({ date: selectedDateRef.current, title: '', start, duration })
     setEditingId(id)
     setEditTitle('')
+    // 让时间/时长框反映本次点击的位置，避免提交时用残留的旧值覆盖
+    setEditTime(toHHMM(start))
+    setEditEnd(toHHMM(Math.min(DAY_END, start + duration)))
+    setEditDuration(String(duration))
+    setEditRepeat('none')
+    setEditTags('')
   }
 
   /* 从收集箱拖入（pointer 事件，触摸/鼠标通用） */
@@ -207,6 +238,8 @@ export function Timeline({ tasks, onFocus }: Props) {
   }, [dragging, scheduleTask, setDragging])
 
   const startDrag = (e: React.PointerEvent, t: Task, mode: 'move' | 'resize') => {
+    // 点击输入框/按钮/把手时不进入拖拽，避免影响聚焦
+    if ((e.target as HTMLElement).closest('input, textarea, select, button')) return
     e.preventDefault()
     e.stopPropagation()
     try {
@@ -217,6 +250,7 @@ export function Timeline({ tasks, onFocus }: Props) {
     dragRef.current = {
       mode,
       taskId: t.id,
+      startX: e.clientX,
       startY: e.clientY,
       origStart: t.start ?? DAY_START,
       origDuration: t.duration,
@@ -224,10 +258,147 @@ export function Timeline({ tasks, onFocus }: Props) {
     }
   }
 
+  const startEditing = (id: string) => {
+    const s = usePlanner.getState()
+    const t = s.tasks.find((x) => x.id === id)
+    if (!t) return
+    const start = t.start ?? DAY_START
+    const duration = t.duration
+    setEditingId(id)
+    setEditTitle(t.title)
+    setEditTime(toHHMM(start))
+    setEditEnd(toHHMM(Math.min(DAY_END, start + duration)))
+    setEditDuration(String(duration))
+    setEditRepeat(t.repeat?.freq ?? 'none')
+    setEditTags(t.tags?.join('、') ?? '')
+  }
+
+  /* 分钟 -> "HH:MM"（time 输入框要求小时补零，如 06:00） */
+  const toHHMM = (mins: number): string =>
+    `${pad2(Math.floor(mins / 60))}:${pad2(mins % 60)}`
+
+  /* 解析用户输入的时间，兼容 "06:00"、"6:00"、"0600"、"600"、"6" 等写法 */
+  const parseTime = (raw: string): number | null => {
+    const s = raw.trim()
+    if (!s) return null
+    let h = 0
+    let m = 0
+    if (s.includes(':')) {
+      const parts = s.split(':')
+      if (parts.length !== 2) return null
+      h = Number(parts[0])
+      m = Number(parts[1])
+    } else {
+      const digits = s.replace(/\D/g, '')
+      if (!digits) return null
+      if (digits.length <= 2) h = Number(digits)
+      else {
+        m = Number(digits.slice(-2))
+        h = Number(digits.slice(0, -2))
+      }
+    }
+    if (!Number.isInteger(h) || !Number.isInteger(m)) return null
+    if (h > 23 || m > 59 || m < 0) return null
+    const start = h * 60 + m
+    if (start < DAY_START || start >= DAY_END) return null
+    return start
+  }
+
+  /* 失焦后仅当焦点确实离开当前卡片时才提交，避免标题框切到时间框时误退出 */
+  const handleBlur = (id: string) => {
+    setTimeout(() => {
+      const el = editCardRef.current
+      if (el && el.contains(document.activeElement)) return
+      commitEdit(id)
+    }, 0)
+  }
+
+  /* 保存当前编辑（供全局点击外部检测复用最新闭包） */
+  const commitRef = useRef<() => void>(() => {})
+  commitRef.current = () => commitEdit(editingIdRef.current ?? '')
+
+  /* 点击卡片外任意处（含其他卡片/空白/时间轴）→ 自动保存当前编辑 */
+  useEffect(() => {
+    if (!editingId) return
+    const onPointerDown = (e: PointerEvent) => {
+      const el = editCardRef.current
+      if (el && el.contains(e.target as Node)) return
+      /* pointerup 前先保存，避免创建新卡/切卡时丢失已输入内容 */
+      commitRef.current()
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => document.removeEventListener('pointerdown', onPointerDown)
+  }, [editingId])
+
+  /* 开始时间变化：保持时长不变，联动结束时间 */
+  const onEditStartChange = (v: string) => {
+    setEditTime(v.replace(/[^0-9:]/g, ''))
+    const st = parseTime(v)
+    const du = Math.round(Number(editDuration))
+    const dur = Number.isFinite(du) && du >= 15 ? du : 60
+    if (st != null) setEditEnd(toHHMM(Math.min(DAY_END, st + dur)))
+  }
+
+  /* 结束时间变化：推算时长，联动开始时间（若开始非法则不动） */
+  const onEditEndChange = (v: string) => {
+    setEditEnd(v.replace(/[^0-9:]/g, ''))
+    const st = parseTime(editTime)
+    const en = parseTime(v)
+    if (st != null && en != null && en > st) {
+      setEditDuration(String(Math.min(en - st, DAY_END - DAY_START)))
+      // 结束受限于 DAY_END，封顶
+      setEditEnd(toHHMM(Math.min(en, DAY_END)))
+    }
+  }
+
+  /* 时长变化：联动结束时间 */
+  const onEditDurationChange = (v: string) => {
+    const clean = v.replace(/\D/g, '')
+    setEditDuration(clean)
+    const st = parseTime(editTime)
+    const du = Math.round(Number(clean))
+    const dur = Number.isFinite(du) && du >= 15 ? du : 60
+    if (st != null) setEditEnd(toHHMM(Math.min(DAY_END, st + dur)))
+  }
+
   const commitEdit = (id: string) => {
     const title = editTitle.trim()
-    if (title) updateTask(id, { title })
-    else deleteTask(id)
+    if (!title) {
+      deleteTask(id)
+      setEditingId(null)
+      return
+    }
+    const start = parseTime(editTime)
+    const end = parseTime(editEnd)
+    const durInput = Math.round(Number(editDuration))
+    let duration = Number.isFinite(durInput) && durInput >= 15 ? durInput : 60
+    if (start != null && end != null && end > start) {
+      duration = end - start
+    }
+    duration = Math.min(Math.max(15, duration), DAY_END - DAY_START)
+    const patch: Partial<Task> = { title }
+    if (start != null) {
+      patch.start = Math.max(DAY_START, Math.min(start, DAY_END - duration))
+      patch.duration = duration
+    }
+    // 重复规则
+    const freq = editRepeat
+    const prev = usePlanner.getState().tasks.find((x) => x.id === id)
+    if (freq === 'none') {
+      patch.repeat = undefined
+      if (prev?.repeat) patch.lastGenerated = undefined
+    } else if (prev?.repeat?.freq !== freq) {
+      // 新设/修改重复频率：保留原日期为锚点开始计算
+      patch.repeat = { freq, until: prev?.repeat?.until ?? null }
+      patch.lastGenerated = prev?.lastGenerated ?? prev?.date ?? selectedDateRef.current
+    }
+    // 标签：按顿号/逗号切分、去重、去空
+    const tags = editTags
+      .split(/[、,，]/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+    patch.tags = tags.length ? Array.from(new Set(tags)) : undefined
+    updateTask(id, patch)
     setEditingId(null)
   }
 
@@ -242,6 +413,7 @@ export function Timeline({ tasks, onFocus }: Props) {
     }
     dragRef.current = {
       mode: 'create',
+      startX: e.clientX,
       startY: e.clientY,
       origStart: Math.max(DAY_START, Math.round(e.clientY - track.getBoundingClientRect().top + (scrollRef.current?.scrollTop ?? 0)) + DAY_START),
       origDuration: 60,
@@ -322,47 +494,186 @@ export function Timeline({ tasks, onFocus }: Props) {
               const start = pv?.start ?? t.start ?? DAY_START
               const duration = pv?.duration ?? t.duration
               const isEditing = editingId === t.id
+              const end = start + duration
+              // 时间段重叠检测：与任意其他已排程任务区间相交
+              const overlaps = tasks.some((o) => {
+                if (o.id === t.id) return false
+                const os = o.start ?? DAY_START
+                const oe = os + o.duration
+                return start < oe && os < end
+              })
               return (
                 <div
                   key={t.id}
-                  className={`tl-card ${t.done ? 'done' : ''} ${pv ? 'dragging' : ''}`}
+                  className={`tl-card ${t.done ? 'done' : ''} ${pv ? 'dragging' : ''} ${isEditing ? 'editing' : ''} ${overlaps ? 'tl-overlap' : ''}`}
                   data-color={t.color}
-                  style={{ top: start - DAY_START, height: Math.max(duration, 30) }}
+                  style={{ top: start - DAY_START, height: isEditing ? Math.max(duration, 156) : Math.max(duration, 64) }}
                   onPointerDown={(e) => startDrag(e, t, 'move')}
                 >
                   {isEditing ? (
-                    <input
-                      autoFocus
-                      value={editTitle}
-                      placeholder="给这个时段起个名字…"
-                      style={{
-                        width: '100%',
-                        border: 'none',
-                        outline: 'none',
-                        background: 'transparent',
-                        fontSize: 14,
-                        fontWeight: 600,
-                        color: 'inherit',
-                        fontFamily: 'inherit',
-                      }}
-                      onChange={(e) => setEditTitle(e.target.value)}
-                      onPointerDown={(e) => e.stopPropagation()}
-                      onBlur={() => commitEdit(t.id)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') commitEdit(t.id)
-                        if (e.key === 'Escape') {
-                          if (!editTitle.trim()) deleteTask(t.id)
-                          setEditingId(null)
-                        }
-                      }}
-                    />
+                    <div className="tl-card-edit" ref={editCardRef}>
+                      <div className="tl-edit-head">
+                        <input
+                          className="tl-edit-title"
+                          autoFocus
+                          value={editTitle}
+                          placeholder="给这个时段起个名字…"
+                          onChange={(e) => setEditTitle(e.target.value)}
+                          onBlur={() => handleBlur(t.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') commitEdit(t.id)
+                            if (e.key === 'Escape') {
+                              if (!editTitle.trim()) deleteTask(t.id)
+                              setEditingId(null)
+                            }
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="tl-edit-close"
+                          title="删除这个时段"
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            deleteTask(t.id)
+                            setEditingId(null)
+                          }}
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                      <div className="tl-edit-row">
+                        <input
+                          className="tl-edit-time"
+                          type="text"
+                          inputMode="numeric"
+                          autoComplete="off"
+                          maxLength={5}
+                          placeholder="06:00"
+                          value={editTime}
+                          onChange={(e) => onEditStartChange(e.target.value)}
+                          onBlur={() => handleBlur(t.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') commitEdit(t.id)
+                          }}
+                        />
+                        <span className="tl-edit-dash">–</span>
+                        <input
+                          className="tl-edit-end"
+                          type="text"
+                          inputMode="numeric"
+                          autoComplete="off"
+                          maxLength={5}
+                          placeholder="07:00"
+                          value={editEnd}
+                          onChange={(e) => onEditEndChange(e.target.value)}
+                          onBlur={() => handleBlur(t.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') commitEdit(t.id)
+                          }}
+                        />
+                        <span className="tl-edit-unit-dot">·</span>
+                        <input
+                          className="tl-edit-duration"
+                          type="text"
+                          inputMode="numeric"
+                          autoComplete="off"
+                          maxLength={3}
+                          placeholder="60"
+                          value={editDuration}
+                          onChange={(e) => onEditDurationChange(e.target.value)}
+                          onBlur={() => handleBlur(t.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') commitEdit(t.id)
+                          }}
+                        />
+                        <span className="tl-edit-unit">分钟</span>
+                        <ColorPicker
+                          value={t.color}
+                          onChange={(c) => updateTask(t.id, { color: c })}
+                        />
+                      </div>
+                      <div className="tl-edit-extras">
+                        <div className="tl-repeat-chip">
+                          {(['none', 'daily', 'weekly', 'monthly'] as const).map(
+                            (f) => (
+                              <button
+                                key={f}
+                                type="button"
+                                className={`tl-repeat-opt ${
+                                  editRepeat === f ? 'active' : ''
+                                }`}
+                                title={
+                                  f === 'none'
+                                    ? '不重复'
+                                    : f === 'daily'
+                                      ? '每天'
+                                      : f === 'weekly'
+                                        ? '每周'
+                                        : '每月'
+                                }
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setEditRepeat(f)
+                                }}
+                              >
+                                {f === 'none'
+                                  ? '不重复'
+                                  : f === 'daily'
+                                    ? '每天'
+                                    : f === 'weekly'
+                                      ? '每周'
+                                      : '每月'}
+                              </button>
+                            ),
+                          )}
+                        </div>
+                        <input
+                          className="tl-edit-tags"
+                          type="text"
+                          placeholder="标签，用逗号分隔"
+                          value={editTags}
+                          onChange={(e) => setEditTags(e.target.value)}
+                          onBlur={() => handleBlur(t.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') commitEdit(t.id)
+                          }}
+                        />
+                      </div>
+                    </div>
                   ) : (
                     <>
-                      <div className="tl-card-title">{t.title}</div>
+                      <div className="tl-card-title">
+                        {t.title}
+                        {t.repeat && (
+                          <button
+                            type="button"
+                            className="tl-repeat-badge"
+                            title="重复任务（勾选完成会自动排到下一次）"
+                            onPointerDown={(e) => e.stopPropagation()}
+                          >
+                            {t.repeat.freq === 'daily'
+                              ? '每天'
+                              : t.repeat.freq === 'weekly'
+                                ? '每周'
+                                : '每月'}
+                          </button>
+                        )}
+                      </div>
                       <div className="tl-card-time">
                         {minToLabel(start)} – {minToLabel(start + duration)}
                         <span style={{ opacity: 0.7 }}> · {duration} 分钟</span>
                       </div>
+                      {t.tags && t.tags.length > 0 && (
+                        <div className="tl-card-tags">
+                          {t.tags.map((tag, i) => (
+                            <span className="tl-tag" key={`${tag}-${i}`}>
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                       <div className="tl-card-mini-actions">
                         <button
                           className="task-action"
@@ -407,6 +718,16 @@ export function Timeline({ tasks, onFocus }: Props) {
                         }}
                       />
                     </>
+                  )}
+                  {isEditing && (
+                    <div
+                      className="tl-resize"
+                      title="拖动调整时长"
+                      onPointerDown={(e) => {
+                        e.stopPropagation()
+                        startDrag(e, t, 'resize')
+                      }}
+                    />
                   )}
                 </div>
               )

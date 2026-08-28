@@ -1,7 +1,7 @@
 /** 时间轴常量与换算 */
 
-/** 时间轴从 6:00 开始 */
-export const DAY_START = 6 * 60
+/** 时间轴从 0:00 开始（全天） */
+export const DAY_START = 0
 /** 到 24:00 结束 */
 export const DAY_END = 24 * 60
 export const DAY_MINUTES = DAY_END - DAY_START

@@ -17,6 +17,18 @@ export function FocusModal() {
   const [running, setRunning] = useState(false)
   const [finished, setFinished] = useState(false)
   const finishedRef = useRef(false)
+  const [customMin, setCustomMin] = useState('')
+
+  /* 切换专注任务时重置计时状态，避免残留上一个任务时长/进度 */
+  useEffect(() => {
+    if (!focusTaskId) return
+    setTotal(25 * 60)
+    setRemaining(25 * 60)
+    setRunning(false)
+    setFinished(false)
+    finishedRef.current = false
+    setCustomMin('')
+  }, [focusTaskId])
 
   useEffect(() => {
     if (!running || finished) return
@@ -50,6 +62,17 @@ export function FocusModal() {
     setFinished(false)
     finishedRef.current = false
     setRunning(false)
+    setCustomMin('')
+  }
+
+  /* 自定义任意分钟数（1–999） */
+  const applyCustom = () => {
+    const mins = Math.floor(Number(customMin))
+    if (!Number.isFinite(mins) || mins < 1) {
+      setCustomMin('')
+      return
+    }
+    pickDuration(Math.min(mins, 999))
   }
 
   const reset = () => {
@@ -113,6 +136,21 @@ export function FocusModal() {
                 {d} 分钟
               </button>
             ))}
+            <label className="focus-custom">
+              <input
+                type="number"
+                min={1}
+                max={999}
+                value={customMin}
+                placeholder="自定义"
+                onChange={(e) => setCustomMin(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') applyCustom()
+                }}
+                disabled={running}
+              />
+              <span>分钟</span>
+            </label>
           </div>
 
           <div className="focus-controls">

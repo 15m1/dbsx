@@ -1,0 +1,19 @@
+{
+  "name": "拾光手账 · 每日时光手账",
+  "short_name": "拾光手账",
+  "description": "单机本地运行的时间规划工具：收集箱 + 时间轴 + 专注计时，数据只存在你自己的设备里。",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6efdf",
+  "theme_color": "#f6efdf",
+  "lang": "zh-CN",
+  "icons": [
+    {
+      "src": "./favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

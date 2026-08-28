@@ -377,6 +377,37 @@ textarea {
   animation: riseIn 0.55s 0.16s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+/* 标签过滤栏 */
+.tag-filter {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 2px 20px 0;
+}
+
+.tag-filter-chip {
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1.5px solid var(--line);
+  background: transparent;
+  color: var(--ink-soft);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  transition: all 0.18s ease;
+}
+
+.tag-filter-chip:hover {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.tag-filter-chip.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--paper);
+  font-weight: 600;
+}
+
 /* 摘要条左上角胶带 */
 .summary::before {
   content: '';
@@ -566,8 +597,16 @@ textarea {
   transition:
     transform 0.18s ease,
     box-shadow 0.18s ease,
+    outline 0.18s ease,
     opacity 0.3s ease;
   animation: popIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* 收集箱内拖放排序的落点提示 */
+.task-card.drop-indicator {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  box-shadow: 0 8px 18px var(--shadow-strong);
 }
 
 .task-card:active {
@@ -675,6 +714,59 @@ textarea {
 .task-action:hover {
   background: color-mix(in srgb, var(--paper) 92%, transparent);
   transform: scale(1.12);
+}
+
+/* 卡片颜色选择器 */
+.color-picker {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.color-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+  padding: 0;
+}
+
+.color-dot:hover {
+  transform: scale(1.18);
+}
+
+.color-dot.active {
+  border-color: color-mix(in srgb, currentColor 70%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 35%, transparent);
+}
+
+.color-dot[data-color='apricot'] {
+  background: var(--c-apricot-bg);
+}
+.color-dot[data-color='terracotta'] {
+  background: var(--c-terracotta-bg);
+}
+.color-dot[data-color='moss'] {
+  background: var(--c-moss-bg);
+}
+.color-dot[data-color='mist'] {
+  background: var(--c-mist-bg);
+}
+.color-dot[data-color='rose'] {
+  background: var(--c-rose-bg);
+}
+.color-dot[data-color='lavender'] {
+  background: var(--c-lavender-bg);
+}
+
+/* 时间轴编辑态的颜色选择器紧凑布局 */
+.tl-card .color-picker {
+  margin-top: 8px;
 }
 
 /* 勾选完成（checkbox） */
@@ -900,6 +992,11 @@ textarea {
   animation: popIn 0.32s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 
+/* 编辑态从顶部开始排布，避免标题/时间段挤在卡片中央 */
+.tl-card.editing {
+  justify-content: flex-start;
+}
+
 /* 时间轴卡片上的小胶带贴纸 */
 .tl-card::before {
   content: '';
@@ -929,6 +1026,26 @@ textarea {
 
 .tl-card.done {
   opacity: 0.55;
+}
+
+/* 时间段重叠警示 */
+.tl-card.tl-overlap {
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--red) 70%, transparent),
+    0 6px 14px var(--shadow);
+}
+
+.tl-card.tl-overlap::after {
+  content: '重叠';
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  font-family: var(--font-ui);
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--red);
+  opacity: 0.85;
+  pointer-events: none;
 }
 
 .tl-card[data-color='apricot'] {
@@ -980,6 +1097,202 @@ textarea {
   letter-spacing: 0.3px;
 }
 
+/* 编辑态卡片：标题在上，时间段行固定到最底部 */
+.tl-card-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  flex: 1;
+}
+
+.tl-card-edit .tl-edit-row {
+  margin-top: auto;
+}
+
+/* 编辑态标题行：标题 + 右上角删除 */
+.tl-edit-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+/* 编辑态重复 + 标签行 */
+.tl-edit-extras {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tl-repeat-chip {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.tl-repeat-opt {
+  padding: 2px 8px;
+  border-radius: 20px;
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+  background: transparent;
+  color: currentColor;
+  font-size: 11px;
+  font-family: var(--font-ui);
+  opacity: 0.75;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tl-repeat-opt.active {
+  background: color-mix(in srgb, currentColor 16%, transparent);
+  border-color: color-mix(in srgb, currentColor 55%, transparent);
+  opacity: 1;
+  font-weight: 600;
+}
+
+.tl-edit-tags {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--paper) 45%, transparent);
+  color: inherit;
+  font-family: var(--font-ui);
+  font-size: 11.5px;
+  height: 26px;
+  padding: 0 8px;
+  outline: none;
+}
+
+/* 卡片上的重复徽标 */
+.tl-repeat-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 20px;
+  background: color-mix(in srgb, currentColor 15%, transparent);
+  border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 500;
+  vertical-align: 2px;
+  cursor: default;
+}
+
+/* 卡片上的标签 */
+.tl-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 3px;
+}
+
+.tl-tag {
+  font-family: var(--font-ui);
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 20px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  color: inherit;
+  opacity: 0.85;
+}
+
+.tl-edit-close {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--paper) 65%, transparent);
+  color: currentColor;
+  opacity: 0.8;
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease,
+    background 0.15s ease;
+}
+
+.tl-edit-close:hover {
+  opacity: 1;
+  transform: scale(1.1);
+  background: color-mix(in srgb, currentColor 18%, transparent);
+}
+
+.tl-edit-title {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 600;
+  color: inherit;
+  font-family: inherit;
+}
+
+.tl-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+
+/* 时间行内的颜色选择器：紧凑横向 */
+.tl-edit-row .color-picker {
+  margin-top: 0;
+  margin-left: 4px;
+  gap: 5px;
+}
+
+.tl-edit-row .color-dot {
+  width: 15px;
+  height: 15px;
+}
+
+.tl-edit-time,
+.tl-edit-end,
+.tl-edit-duration {
+  border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--paper) 45%, transparent);
+  color: inherit;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 1;
+  height: 26px;
+  box-sizing: border-box;
+  padding: 0 6px;
+  outline: none;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.tl-edit-time {
+  width: 72px;
+}
+
+.tl-edit-end {
+  width: 72px;
+}
+
+.tl-edit-duration {
+  width: 56px;
+}
+
+.tl-edit-dash {
+  opacity: 0.6;
+}
+
+.tl-edit-unit-dot {
+  opacity: 0.5;
+}
+
+.tl-edit-unit {
+  opacity: 0.7;
+}
+
 /* 底部调时长手柄 */
 .tl-resize {
   position: absolute;
@@ -996,6 +1309,11 @@ textarea {
 }
 
 .tl-card:hover .tl-resize {
+  opacity: 1;
+}
+
+/* 编辑态卡片把手常显，方便直接拉长时段 */
+.tl-card.editing .tl-resize {
   opacity: 1;
 }
 
@@ -1116,6 +1434,7 @@ textarea {
   box-shadow: 0 30px 70px rgba(0, 0, 0, 0.3);
   padding: 24px;
   animation: modalIn 0.4s cubic-bezier(0.34, 1.4, 0.64, 1) both;
+  overflow: hidden; /* 裁剪圆角，让子元素滚动区域在模态框内生效 */
 }
 
 .modal-head {
@@ -1235,6 +1554,38 @@ textarea {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--paper);
+}
+
+/* 自定义专注时长的输入 */
+.focus-custom {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-ui);
+  font-size: 13.5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1.5px dashed var(--line);
+  color: var(--ink-soft);
+}
+
+.focus-custom input {
+  width: 56px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: 13.5px;
+  text-align: center;
+}
+
+.focus-custom input::placeholder {
+  color: var(--ink-faint);
+}
+
+.focus-custom span {
+  font-size: 12px;
 }
 
 .focus-controls {
@@ -1421,8 +1772,17 @@ textarea {
 
 .ai-presets {
   display: flex;
+  flex-wrap: nowrap;
   gap: 10px;
   margin-bottom: 2px;
+  overflow-x: auto; /* 预设较多时横向滚动，避免右侧被裁掉 */
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  padding-bottom: 4px;
+}
+
+.ai-presets button {
+  flex: 0 0 auto; /* 不被压缩，保证能横向滚动到最右侧 */
 }
 
 .ai-field {

@@ -18,6 +18,7 @@ function App() {
 
   const [dataOpen, setDataOpen] = useState(false)
   const [aiOpen, setAiOpen] = useState(false)
+  const [activeTag, setActiveTag] = useState<string>('all')
   const [toast, setToast] = useState<string | null>(null)
   const toastTimer = useRef<number | undefined>(undefined)
 
@@ -29,8 +30,27 @@ function App() {
     () => tasks.filter((t) => t.date === selectedDate),
     [tasks, selectedDate],
   )
-  const scheduled = useMemo(() => dayTasks.filter((t) => t.start != null), [dayTasks])
-  const inboxTasks = useMemo(() => dayTasks.filter((t) => t.start == null), [dayTasks])
+
+  /* 收集当天出现的全部标签，用于过滤栏 */
+  const allTags = useMemo(() => {
+    const set = new Set<string>()
+    for (const t of dayTasks) for (const tag of t.tags ?? []) set.add(tag)
+    return Array.from(set)
+  }, [dayTasks])
+
+  const filteredDay = useMemo(() => {
+    if (!activeTag || activeTag === 'all') return dayTasks
+    return dayTasks.filter((t) => t.tags?.includes(activeTag))
+  }, [dayTasks, activeTag])
+
+  const scheduled = useMemo(
+    () => filteredDay.filter((t) => t.start != null),
+    [filteredDay],
+  )
+  const inboxTasks = useMemo(
+    () => filteredDay.filter((t) => t.start == null),
+    [filteredDay],
+  )
 
   const showToast = (msg: string) => {
     setToast(msg)
@@ -47,7 +67,27 @@ function App() {
         onToast={showToast}
       />
 
-      <SummaryBar tasks={dayTasks} />
+      <SummaryBar tasks={filteredDay} />
+
+      {allTags.length > 0 && (
+        <div className="tag-filter">
+          <button
+            className={`tag-filter-chip ${activeTag === 'all' ? 'active' : ''}`}
+            onClick={() => setActiveTag('all')}
+          >
+            全部
+          </button>
+          {allTags.map((tag) => (
+            <button
+              key={tag}
+              className={`tag-filter-chip ${activeTag === tag ? 'active' : ''}`}
+              onClick={() => setActiveTag(tag)}
+            >
+              {tag}
+            </button>
+          ))}
+        </div>
+      )}
 
       <main className="workspace">
         <Inbox tasks={inboxTasks} onFocus={setFocusTaskId} />
