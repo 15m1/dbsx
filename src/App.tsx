@@ -7,6 +7,8 @@ import { Timeline } from './components/Timeline'
 import { FocusModal } from './components/FocusModal'
 import { DataModal } from './components/DataModal'
 import { AiAddModal } from './components/AiAddModal'
+import { NotesPage } from './components/NotesPage'
+import { TabBar, type PageKey } from './components/TabBar'
 import { usePlanner } from './store'
 
 function App() {
@@ -16,6 +18,7 @@ function App() {
   const carryOver = usePlanner((s) => s.carryOver)
   const setFocusTaskId = usePlanner((s) => s.setFocusTaskId)
 
+  const [page, setPage] = useState<PageKey>('today')
   const [dataOpen, setDataOpen] = useState(false)
   const [aiOpen, setAiOpen] = useState(false)
   const [activeTag, setActiveTag] = useState<string>('all')
@@ -62,41 +65,51 @@ function App() {
     <div className="app">
       <Header onOpenData={() => setDataOpen(true)} onOpenAi={() => setAiOpen(true)} />
 
-      <DateNav
-        onCarryOver={() => carryOver(selectedDate)}
-        onToast={showToast}
-      />
+      {page === 'today' ? (
+        <>
+          <DateNav
+            onCarryOver={() => carryOver(selectedDate)}
+            onToast={showToast}
+          />
 
-      <SummaryBar tasks={filteredDay} />
+          <SummaryBar tasks={filteredDay} />
 
-      {allTags.length > 0 && (
-        <div className="tag-filter">
-          <button
-            className={`tag-filter-chip ${activeTag === 'all' ? 'active' : ''}`}
-            onClick={() => setActiveTag('all')}
-          >
-            全部
-          </button>
-          {allTags.map((tag) => (
-            <button
-              key={tag}
-              className={`tag-filter-chip ${activeTag === tag ? 'active' : ''}`}
-              onClick={() => setActiveTag(tag)}
-            >
-              {tag}
-            </button>
-          ))}
-        </div>
+          {allTags.length > 0 && (
+            <div className="tag-filter">
+              <button
+                className={`tag-filter-chip ${activeTag === 'all' ? 'active' : ''}`}
+                onClick={() => setActiveTag('all')}
+              >
+                全部
+              </button>
+              {allTags.map((tag) => (
+                <button
+                  key={tag}
+                  className={`tag-filter-chip ${activeTag === tag ? 'active' : ''}`}
+                  onClick={() => setActiveTag(tag)}
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <main className="workspace">
+            <Inbox tasks={inboxTasks} onFocus={setFocusTaskId} />
+            <Timeline tasks={scheduled} onFocus={setFocusTaskId} />
+          </main>
+        </>
+      ) : (
+        <main className="notes-main">
+          <NotesPage />
+        </main>
       )}
-
-      <main className="workspace">
-        <Inbox tasks={inboxTasks} onFocus={setFocusTaskId} />
-        <Timeline tasks={scheduled} onFocus={setFocusTaskId} />
-      </main>
 
       <FocusModal />
       {dataOpen && <DataModal onClose={() => setDataOpen(false)} onToast={showToast} />}
       {aiOpen && <AiAddModal onClose={() => setAiOpen(false)} onToast={showToast} />}
+
+      <TabBar page={page} onChange={setPage} />
 
       <div className={`toast ${toast ? 'show' : ''}`}>{toast}</div>
     </div>

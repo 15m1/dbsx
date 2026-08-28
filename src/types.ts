@@ -61,3 +61,13 @@ export interface AiDraft {
   start: number | null
   duration: number
 }
+
+/** 灵感便签 */
+export interface Note {
+  id: string
+  text: string
+  color: TaskColor
+  /** 置顶便签始终排在前面 */
+  pinned: boolean
+  createdAt: number
+}

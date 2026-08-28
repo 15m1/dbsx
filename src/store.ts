@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware'
 import type {
   AiConfig,
   DragState,
+  Note,
   RepeatRule,
   Task,
   TaskColor,
@@ -126,12 +127,17 @@ interface PlannerState {
   dragging: DragState | null
   focusTaskId: string | null
   aiConfig: AiConfig
+  notes: Note[]
 
   setTheme: (theme: Theme) => void
   setSelectedDate: (date: string) => void
   setDragging: (d: DragState | null) => void
   setFocusTaskId: (id: string | null) => void
   setAiConfig: (config: AiConfig) => void
+
+  addNote: (text: string, color?: TaskColor) => string
+  updateNote: (id: string, patch: Partial<Note>) => void
+  deleteNote: (id: string) => void
 
   addTask: (p: {
     date: string
@@ -164,12 +170,32 @@ export const usePlanner = create<PlannerState>()(
       dragging: null,
       focusTaskId: null,
       aiConfig: DEFAULT_AI_CONFIG,
+      notes: [],
 
       setTheme: (theme) => set({ theme }),
       setSelectedDate: (selectedDate) => set({ selectedDate }),
       setDragging: (dragging) => set({ dragging }),
       setFocusTaskId: (focusTaskId) => set({ focusTaskId }),
       setAiConfig: (aiConfig) => set({ aiConfig }),
+
+      addNote: (text, color) => {
+        const id = genId()
+        set((s) => ({
+          notes: [
+            { id, text, color: color ?? randomColor(), pinned: false, createdAt: Date.now() },
+            ...s.notes,
+          ],
+        }))
+        return id
+      },
+      updateNote: (id, patch) =>
+        set((s) => ({
+          notes: s.notes.map((n) => (n.id === id ? { ...n, ...patch } : n)),
+        })),
+      deleteNote: (id) =>
+        set((s) => ({
+          notes: s.notes.filter((n) => n.id !== id),
+        })),
 
       addTask: (p) => {
         const id = genId()
@@ -284,6 +310,7 @@ export const usePlanner = create<PlannerState>()(
       name: 'day-planner-storage',
       partialize: (s) => ({
         tasks: s.tasks,
+        notes: s.notes,
         theme: s.theme,
         aiConfig: s.aiConfig,
       }),
