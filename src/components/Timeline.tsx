@@ -110,9 +110,11 @@ export function Timeline({ tasks, onFocus }: Props) {
           DAY_END - Math.max(d.origDuration, 15),
         )
         dragPreview.current = { id: d.taskId, start, duration: d.origDuration }
-        // 移动时实时同步到开始时间输入框
-        setEditTime(toHHMM(start))
-        setEditEnd(toHHMM(Math.min(DAY_END, start + d.origDuration)))
+        // 仅在拖动的是正在编辑的卡片时才同步编辑态显示，避免污染其它编辑中的输入框
+        if (d.taskId === editingIdRef.current) {
+          setEditTime(toHHMM(start))
+          setEditEnd(toHHMM(Math.min(DAY_END, start + d.origDuration)))
+        }
         setForceTick((n) => n + 1)
       } else if (d.mode === 'resize' && d.taskId) {
         const endMin = Math.min(DAY_END, Math.max(DAY_START, minute))
@@ -121,9 +123,11 @@ export function Timeline({ tasks, onFocus }: Props) {
           Math.max(15, endMin - d.origStart),
         )
         dragPreview.current = { id: d.taskId, start: d.origStart, duration }
-        // 同步到编辑态时长输入框，避免提交时被旧值覆盖
-        setEditDuration(String(duration))
-        setEditEnd(toHHMM(Math.min(DAY_END, d.origStart + duration)))
+        // 仅在拖动的是正在编辑的卡片时才同步编辑态显示，避免污染其它编辑中的输入框
+        if (d.taskId === editingIdRef.current) {
+          setEditDuration(String(duration))
+          setEditEnd(toHHMM(Math.min(DAY_END, d.origStart + duration)))
+        }
         setForceTick((n) => n + 1)
       } else if (d.mode === 'create') {
         const diff = Math.abs(e.clientY - d.startY)
