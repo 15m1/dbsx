@@ -10,7 +10,6 @@ import type {
   Theme,
 } from './types'
 import { addDays, parseKey, toDateKey, todayKey } from './lib/date'
-
 const COLOR_POOL: TaskColor[] = [
   'apricot',
   'terracotta',
@@ -33,6 +32,19 @@ export function randomColor(): TaskColor {
 
 const VALID_COLORS = new Set<string>(COLOR_POOL)
 const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/
+
+/** 从文本中解析 #标签（支持中英文，空格/#/换行/标点结尾） */
+export function extractTags(text: string): string[] {
+  if (!text) return []
+  const matches = text.match(/#([^\s#，,。.!！?？;；:：、\n\r\t]{1,30})/g)
+  if (!matches) return []
+  const set = new Set<string>()
+  for (const m of matches) {
+    const tag = m.slice(1).trim()
+    if (tag) set.add(tag)
+  }
+  return [...set]
+}
 
 /**
  * 白名单校验导入数据：仅接受结构正确的任务字段，
@@ -94,6 +106,43 @@ function sanitizeRepeat(raw: unknown): RepeatRule | undefined {
   return { freq, until }
 }
 
+/** Notes 白名单校验导入 */
+export function sanitizeNotes(raw: unknown): Note[] | null {
+  if (!Array.isArray(raw)) return null
+  const out: Note[] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const o = item as Record<string, unknown>
+    const text = typeof o.text === 'string' ? o.text : ''
+    if (!text) continue
+    const color =
+      typeof o.color === 'string' && VALID_COLORS.has(o.color)
+        ? (o.color as TaskColor)
+        : randomColor()
+    const pinned = o.pinned === true
+    const id = typeof o.id === 'string' && o.id ? o.id : genId()
+    const createdAt =
+      typeof o.createdAt === 'number' && Number.isFinite(o.createdAt)
+        ? o.createdAt
+        : Date.now()
+    const updatedAt =
+      typeof o.updatedAt === 'number' && Number.isFinite(o.updatedAt)
+        ? o.updatedAt
+        : undefined
+    const deletedAt =
+      typeof o.deletedAt === 'number' && Number.isFinite(o.deletedAt)
+        ? o.deletedAt
+        : undefined
+    const tags = Array.isArray(o.tags)
+      ? (o.tags as unknown[])
+          .filter((v): v is string => typeof v === 'string' && v.length > 0 && v.length <= 30)
+          .slice(0, 20)
+      : extractTags(text)
+    out.push({ id, text, color, pinned, tags, createdAt, updatedAt, deletedAt })
+  }
+  return out
+}
+
 /** 返回 fromKey 之后紧随本次出现日期的下一个重复日期（不含 fromKey 本身） */
 export function nextOccurrence(freq: RepeatRule['freq'], fromKey: string): string {
   const d = parseKey(fromKey)
@@ -128,6 +177,8 @@ interface PlannerState {
   focusTaskId: string | null
   aiConfig: AiConfig
   notes: Note[]
+  /** 回收站（被删除的便签，30 天内可恢复） */
+  trashNotes: Note[]
 
   setTheme: (theme: Theme) => void
   setSelectedDate: (date: string) => void
@@ -137,7 +188,26 @@ interface PlannerState {
 
   addNote: (text: string, color?: TaskColor) => string
   updateNote: (id: string, patch: Partial<Note>) => void
+  /** 删除便签：移入回收站（可恢复） */
   deleteNote: (id: string) => void
+  /** 恢复回收站里的便签 */
+  restoreNote: (id: string) => void
+  /** 从回收站彻底删除 */
+  purgeNote: (id: string) => void
+  /** 清空回收站 */
+  emptyTrash: () => void
+  /** 清理超过 30 天的回收站便签 */
+  pruneTrash: () => void
+  /** 拖拽排序：把 fromId 移到 toId 之前（null=移到末尾）；仅同组（同 pinned）生效 */
+  reorderNotes: (fromId: string, toId: string | null) => void
+  /** 整体重排某组（置顶/普通）便签：按 orderedIds 顺序；仅同组生效，异组相对位置不变 */
+  setNoteOrder: (orderedIds: string[]) => void
+  /** 批量删除：一批便签移入回收站 */
+  bulkTrashNotes: (ids: string[]) => void
+  /** 批量置顶/取消置顶 */
+  bulkSetPinned: (ids: string[], pinned: boolean) => void
+  /** 批量换色 */
+  bulkSetColor: (ids: string[], color: TaskColor) => void
 
   addTask: (p: {
     date: string
@@ -157,8 +227,8 @@ interface PlannerState {
   reorderTask: (fromId: string, toId: string) => void
   /** 当日未完成任务顺延到次日 */
   carryOver: (fromKey: string) => void
-  /** 导入数据（覆盖全部） */
-  importData: (tasks: Task[], theme?: Theme) => void
+  /** 导入数据（覆盖全部）；notes/trashNotes 可选 */
+  importData: (tasks: Task[], theme?: Theme, notes?: Note[], trashNotes?: Note[]) => void
 }
 
 export const usePlanner = create<PlannerState>()(
@@ -171,6 +241,7 @@ export const usePlanner = create<PlannerState>()(
       focusTaskId: null,
       aiConfig: DEFAULT_AI_CONFIG,
       notes: [],
+      trashNotes: [],
 
       setTheme: (theme) => set({ theme }),
       setSelectedDate: (selectedDate) => set({ selectedDate }),
@@ -180,9 +251,19 @@ export const usePlanner = create<PlannerState>()(
 
       addNote: (text, color) => {
         const id = genId()
+        const now = Date.now()
+        const tags = extractTags(text)
         set((s) => ({
           notes: [
-            { id, text, color: color ?? randomColor(), pinned: false, createdAt: Date.now() },
+            {
+              id,
+              text,
+              color: color ?? randomColor(),
+              pinned: false,
+              createdAt: now,
+              updatedAt: now,
+              tags,
+            },
             ...s.notes,
           ],
         }))
@@ -190,12 +271,145 @@ export const usePlanner = create<PlannerState>()(
       },
       updateNote: (id, patch) =>
         set((s) => ({
-          notes: s.notes.map((n) => (n.id === id ? { ...n, ...patch } : n)),
+          notes: s.notes.map((n) => {
+            if (n.id !== id) return n
+            const next: Note = { ...n, ...patch }
+            // 如果修改了 text，重新解析 tags + 更新 updatedAt
+            if (patch.text !== undefined) {
+              next.tags = extractTags(patch.text)
+              next.updatedAt = Date.now()
+            } else if (Object.keys(patch).length > 0) {
+              next.updatedAt = Date.now()
+            }
+            return next
+          }),
         })),
       deleteNote: (id) =>
+        set((s) => {
+          const target = s.notes.find((n) => n.id === id)
+          if (!target) return s
+          const trashed: Note = { ...target, deletedAt: Date.now() }
+          return {
+            notes: s.notes.filter((n) => n.id !== id),
+            trashNotes: [trashed, ...s.trashNotes],
+          }
+        }),
+
+      restoreNote: (id) =>
+        set((s) => {
+          const target = s.trashNotes.find((n) => n.id === id)
+          if (!target) return s
+          const { deletedAt: _del, ...rest } = target
+          return {
+            trashNotes: s.trashNotes.filter((n) => n.id !== id),
+            notes: [rest, ...s.notes],
+          }
+        }),
+
+      purgeNote: (id) =>
         set((s) => ({
-          notes: s.notes.filter((n) => n.id !== id),
+          trashNotes: s.trashNotes.filter((n) => n.id !== id),
         })),
+
+      emptyTrash: () => set({ trashNotes: [] }),
+
+      pruneTrash: () =>
+        set((s) => {
+          const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000
+          const remaining = s.trashNotes.filter((n) => (n.deletedAt ?? 0) >= cutoff)
+          return remaining.length === s.trashNotes.length ? s : { trashNotes: remaining }
+        }),
+
+      reorderNotes: (fromId, toId) =>
+        set((s) => {
+          const fromIdx = s.notes.findIndex((n) => n.id === fromId)
+          if (fromIdx < 0) return s
+          const from = s.notes[fromIdx]
+          const next = s.notes.slice()
+          next.splice(fromIdx, 1)
+          if (toId === null) {
+            // 移到同组末尾
+            let lastIdx = next.length
+            for (let i = next.length - 1; i >= 0; i--) {
+              if (next[i].pinned === from.pinned) {
+                lastIdx = i + 1
+                break
+              }
+            }
+            next.splice(lastIdx, 0, from)
+          } else {
+            const toIdx = next.findIndex((n) => n.id === toId)
+            if (toIdx < 0) return s
+            // 仅同组内排序（置顶/普通不能互拖）
+            if (next[toIdx].pinned !== from.pinned) return s
+            next.splice(toIdx, 0, from)
+          }
+          return { notes: next }
+        }),
+
+      setNoteOrder: (orderedIds) =>
+        set((s) => {
+          if (!orderedIds.length) return s
+          const first = s.notes.find((n) => n.id === orderedIds[0])
+          if (!first) return s
+          const pinned = first.pinned
+          const byId = new Map(s.notes.map((n) => [n.id, n]))
+          const ordered = orderedIds
+            .map((id) => byId.get(id))
+            .filter((n): n is Note => !!n)
+          if (ordered.length !== orderedIds.length) return s
+          const cur = s.notes.filter((n) => n.pinned === pinned).map((n) => n.id)
+          if (cur.length !== ordered.length) return s
+          const same = cur.every((id, i) => id === ordered[i])
+          if (same) return s
+          // 遍历原数组：目标组卡片替换为重排后的顺序，异组保持原相对位置
+          const next: Note[] = []
+          let idx = 0
+          for (const n of s.notes) {
+            if (n.pinned === pinned) {
+              if (idx < ordered.length) next.push(ordered[idx++])
+            } else {
+              next.push(n)
+            }
+          }
+          if (idx < ordered.length) next.push(...ordered.slice(idx))
+          return { notes: next }
+        }),
+
+      bulkTrashNotes: (ids) =>
+        set((s) => {
+          const idSet = new Set(ids)
+          const trashed = s.notes
+            .filter((n) => idSet.has(n.id))
+            .map((n) => ({ ...n, deletedAt: Date.now() }))
+          if (!trashed.length) return s
+          return {
+            notes: s.notes.filter((n) => !idSet.has(n.id)),
+            trashNotes: [...trashed, ...s.trashNotes],
+          }
+        }),
+
+      bulkSetPinned: (ids, pinned) =>
+        set((s) => {
+          const idSet = new Set(ids)
+          const now = Date.now()
+          return {
+            notes: s.notes.map((n) =>
+              idSet.has(n.id) ? { ...n, pinned, updatedAt: now } : n,
+            ),
+          }
+        }),
+
+      bulkSetColor: (ids, color) =>
+        set((s) => {
+          const idSet = new Set(ids)
+          const now = Date.now()
+          return {
+            notes: s.notes.map((n) =>
+              idSet.has(n.id) ? { ...n, color, updatedAt: now } : n,
+            ),
+          }
+        }),
 
       addTask: (p) => {
         const id = genId()
@@ -304,13 +518,20 @@ export const usePlanner = create<PlannerState>()(
           }
         }),
 
-      importData: (tasks, theme) => set({ tasks, theme: theme ?? 'light' }),
+      importData: (tasks, theme, notes, trashNotes) =>
+        set({
+          tasks,
+          theme: theme ?? 'light',
+          notes: notes ?? [],
+          trashNotes: trashNotes ?? [],
+        }),
     }),
     {
       name: 'day-planner-storage',
       partialize: (s) => ({
         tasks: s.tasks,
         notes: s.notes,
+        trashNotes: s.trashNotes,
         theme: s.theme,
         aiConfig: s.aiConfig,
       }),

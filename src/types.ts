@@ -69,5 +69,10 @@ export interface Note {
   color: TaskColor
   /** 置顶便签始终排在前面 */
   pinned: boolean
+  /** 从 text 中自动解析出的 #标签（纯文本标签，不含 #） */
+  tags?: string[]
   createdAt: number
+  updatedAt?: number
+  /** 移到回收站的时间戳；存在即表示该便签在回收站中 */
+  deletedAt?: number
 }

@@ -2555,60 +2555,41 @@ body.note-dragging .note-card:hover {
   cursor: grabbing;
 }
 
-/* 拖拽中的卡片：完全隐藏（保留占位高度），随拖动实时移动到目标位置，让位效果清晰 */
+/* 拖拽中的卡片：隐藏内容但保留占位，并用虚线框标出“即将放入的空位”，让其他卡片实时让位 */
 .note-card.dragging {
   visibility: hidden;
   opacity: 0;
   transform: scale(0.98) rotate(0deg) !important;
 }
 
+.note-card.dragging::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  visibility: visible;
+  border: 2px dashed color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  z-index: 2;
+}
+
 /* 拖拽 ghost（React 渲染的跟随指针副本容器） */
 .note-ghost {
   position: fixed;
+  top: 0;
+  left: 0;
   z-index: 600;
   margin: 0;
   pointer-events: none;
   filter: saturate(1.05);
+  /* transform 移动走合成器，避免 reflow 造成跟手卡顿 */
+  will-change: transform;
 }
 
 .note-ghost .note-card {
   transform: rotate(var(--rot, 0deg)) scale(1.03);
   box-shadow: 0 18px 44px rgba(0, 0, 0, 0.28);
   cursor: grabbing;
-}
-
-/* 插入指示线 */
-.note-card.drop-before::after,
-.note-card.drop-after::after {
-  content: '';
-  position: absolute;
-  left: 6px;
-  right: 6px;
-  height: 5px;
-  border-radius: 3px;
-  background: var(--accent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
-  z-index: 3;
-  animation: dropLineIn 0.18s ease both;
-}
-
-.note-card.drop-before::after {
-  top: -7px;
-}
-
-.note-card.drop-after::after {
-  bottom: -7px;
-}
-
-@keyframes dropLineIn {
-  from {
-    opacity: 0;
-    transform: scaleX(0.4);
-  }
-  to {
-    opacity: 1;
-    transform: scaleX(1);
-  }
 }
 
 /* 空状态 */

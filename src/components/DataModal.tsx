@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 import { Download, Trash2, Upload, X } from 'lucide-react'
-import { usePlanner, sanitizeTasks } from '../store'
+import { usePlanner, sanitizeTasks, sanitizeNotes } from '../store'
 import { todayKey } from '../lib/date'
 
 interface Props {
@@ -25,7 +25,7 @@ export function DataModal({ onClose, onToast }: Props) {
     a.download = `拾光手账-备份-${todayKey()}.json`
     a.click()
     URL.revokeObjectURL(url)
-    onToast('已导出备份文件')
+    onToast('已导出备份文件（含手账+灵感墙）')
   }
 
   const handleFile = (file: File) => {
@@ -36,12 +36,15 @@ export function DataModal({ onClose, onToast }: Props) {
         const state = data?.state ?? data
         const tasks = sanitizeTasks(state?.tasks)
         if (!tasks) throw new Error('格式不对')
+        // notes/trashNotes 可能来自旧备份（没这个字段）→ 允许为空数组
+        const notes = sanitizeNotes(state?.notes) ?? []
+        const trashNotes = sanitizeNotes(state?.trashNotes) ?? []
         if (typeof state.theme === 'string') {
-          importData(tasks, state.theme === 'dark' ? 'dark' : 'light')
+          importData(tasks, state.theme === 'dark' ? 'dark' : 'light', notes, trashNotes)
         } else {
-          importData(tasks)
+          importData(tasks, undefined, notes, trashNotes)
         }
-        onToast('数据导入成功')
+        onToast(`数据导入成功（${tasks.length} 条任务 / ${notes.length} 张便签）`)
         onClose()
       } catch {
         onToast('导入失败：不是有效的备份文件')
@@ -51,8 +54,8 @@ export function DataModal({ onClose, onToast }: Props) {
   }
 
   const clearAll = () => {
-    if (!window.confirm('确定要清空所有手账数据吗？此操作不可恢复，建议先导出备份。')) return
-    usePlanner.setState({ tasks: [] })
+    if (!window.confirm('确定要清空所有数据吗？包括手账任务、灵感便签和回收站，此操作不可恢复，建议先导出备份。')) return
+    usePlanner.setState({ tasks: [], notes: [], trashNotes: [] })
     onToast('所有数据已清空')
     onClose()
   }

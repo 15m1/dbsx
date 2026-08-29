@@ -93,9 +93,12 @@ interface DragState {
   /** 卡片尺寸 */
   w: number
   h: number
-  /** 落点：目标卡片 + 插到它前面还是后面 */
-  targetId: string | null
-  before: boolean
+}
+
+/** 拖拽中的组内渲染顺序（置顶组 / 普通组），实时让位重排只改这个，松手才提交 store */
+interface DragOrder {
+  pinned: string[]
+  normal: string[]
 }
 
 export function NotesPage() {
@@ -108,7 +111,7 @@ export function NotesPage() {
   const purgeNote = usePlanner((s) => s.purgeNote)
   const emptyTrash = usePlanner((s) => s.emptyTrash)
   const pruneTrash = usePlanner((s) => s.pruneTrash)
-  const reorderNotes = usePlanner((s) => s.reorderNotes)
+  const setNoteOrder = usePlanner((s) => s.setNoteOrder)
   const bulkTrashNotes = usePlanner((s) => s.bulkTrashNotes)
   const bulkSetPinned = usePlanner((s) => s.bulkSetPinned)
   const bulkSetColor = usePlanner((s) => s.bulkSetColor)
@@ -132,11 +135,18 @@ export function NotesPage() {
   const [drag, setDrag] = useState<DragState | null>(null)
   /** drag 的 ref 镜像：document 级监听器里读取最新拖拽状态（写穿同步，不经 React 提交） */
   const dragRef = useRef<DragState | null>(null)
+  /** 拖拽中的组内渲染顺序（实时让位重排）；ref 镜像保证每帧读最新 */
+  const dragOrderRef = useRef<DragOrder | null>(null)
+  const [dragOrder, setDragOrder] = useState<DragOrder | null>(null)
+  /** rAF 句柄：指针移动按帧节流，避免高频 setState */
+  const rafId = useRef(0)
+  /** ghost 容器的 DOM 引用：位置用 rAF 直接改 style，不走 React 渲染（避免每帧重渲染卡顿） */
+  const ghostRef = useRef<HTMLDivElement>(null)
+  /** 交换防抖：记录上次交换时目标卡片中心，ghost 需移开足够距离才允许下一次交换，避免来回抖动 */
+  const lastSwapCenter = useRef<{ x: number; y: number } | null>(null)
   const notesRef = useRef(notes)
   notesRef.current = notes
   const suppressClick = useRef(false)
-  /** FLIP 动画：记录重排前各卡片位置，重排后平滑滑到新位置 */
-  const flipFirst = useRef<Map<string, DOMRect> | null>(null)
 
   /* 挂载时清理 30 天前的回收站便签 */
   useEffect(() => {
@@ -175,6 +185,21 @@ export function NotesPage() {
 
   const pinnedNotes = useMemo(() => filtered.filter((n) => n.pinned), [filtered])
   const normalNotes = useMemo(() => filtered.filter((n) => !n.pinned), [filtered])
+
+  /* 渲染时优先用拖拽中的组内顺序（实时让位）；无拖拽则用 store 顺序 */
+  const notesById = useMemo(() => new Map(notes.map((n) => [n.id, n])), [notes])
+  const renderPinned = useMemo(() => {
+    if (!dragOrder) return pinnedNotes
+    return dragOrder.pinned
+      .map((id) => notesById.get(id))
+      .filter((n): n is Note => !!n)
+  }, [dragOrder, pinnedNotes, notesById])
+  const renderNormal = useMemo(() => {
+    if (!dragOrder) return normalNotes
+    return dragOrder.normal
+      .map((id) => notesById.get(id))
+      .filter((n): n is Note => !!n)
+  }, [dragOrder, normalNotes, notesById])
 
   const filteringActive =
     keyword.trim() !== '' || filterColor !== 'all' || filterTag !== 'all'
@@ -241,7 +266,84 @@ export function NotesPage() {
       (el) => !el.closest('.note-ghost') && el.dataset.noteId,
     )
 
+  /** 初始化拖拽：记录当前组内顺序作为渲染基线（ghost 跟随指针，其他卡片实时让位） */
+  const initDragOrder = () => {
+    const order: DragOrder = {
+      pinned: notesRef.current.filter((n) => n.pinned).map((n) => n.id),
+      normal: notesRef.current.filter((n) => !n.pinned).map((n) => n.id),
+    }
+    dragOrderRef.current = order
+    setDragOrder(order)
+  }
+
+  /**
+   * 计算被拖卡片正压在哪张卡片上（Android 主屏式拖动交换）。
+   * 只有 ghost 中心确实落在某张卡片的矩形内（含少量容差）才返回该卡片，
+   * 处于间隙时不交换——交换都是明确的“压上去”，杜绝连环交换/闪烁。
+   */
+  const computeSwapTarget = (): string | null => {
+    const d = dragRef.current
+    if (!d) return null
+    const gx = d.x + d.w / 2
+    const gy = d.y + d.h / 2
+    // 同组卡片（排除自身）
+    const els: HTMLElement[] = []
+    wallCards().forEach((el) => {
+      const id = el.dataset.noteId
+      const n = id ? notesRef.current.find((x) => x.id === id) : undefined
+      if (n && n.pinned === d.pinned && id !== d.id) els.push(el)
+    })
+    // 命中：ghost 中心在卡片矩形内（向外扩 10px 容差）
+    for (const el of els) {
+      const r = el.getBoundingClientRect()
+      if (gx >= r.left - 10 && gx <= r.right + 10 && gy >= r.top - 10 && gy <= r.bottom + 10) {
+        return el.dataset.noteId!
+      }
+    }
+    return null
+  }
+
+  /** 应用交换：被拖卡片与目标卡片在组内顺序中互换，其余卡片不动（瞬时生效，无位置动画） */
+  const applySwap = () => {
+    const d = dragRef.current
+    if (!d || !dragOrderRef.current) return
+    const targetId = computeSwapTarget()
+    if (!targetId || targetId === d.id) return
+    const order = dragOrderRef.current
+    const groupKey: 'pinned' | 'normal' = d.pinned ? 'pinned' : 'normal'
+    const arr = order[groupKey]
+    const ai = arr.indexOf(d.id)
+    const bi = arr.indexOf(targetId)
+    if (ai < 0 || bi < 0 || ai === bi) return
+    // 交换防抖：ghost 中心需离开上次交换点足够距离才允许下一次交换，避免来回抖动
+    if (lastSwapCenter.current) {
+      const gx = d.x + d.w / 2
+      const gy = d.y + d.h / 2
+      const moved = Math.hypot(gx - lastSwapCenter.current.x, gy - lastSwapCenter.current.y)
+      const selfEl = document.querySelector<HTMLElement>(`[data-note-id="${d.id}"]`)
+      const h = selfEl ? selfEl.getBoundingClientRect().height : 60
+      const minMove = Math.min(h * 0.3, 40)
+      if (moved < minMove) return
+    }
+    const next = arr.slice()
+    next[ai] = arr[bi]
+    next[bi] = arr[ai]
+    const nextOrder = { ...order, [groupKey]: next }
+    dragOrderRef.current = nextOrder // 写穿：不等 React 提交，立即可读
+    // 记录上次交换点（目标卡片交换前的位置中心），作为下次交换的防抖基准
+    const bEl = document.querySelector<HTMLElement>(`[data-note-id="${targetId}"]`)
+    const br = bEl ? bEl.getBoundingClientRect() : null
+    lastSwapCenter.current = br
+      ? { x: br.left + br.width / 2, y: br.top + br.height / 2 }
+      : { x: d.x + d.w / 2, y: d.y + d.h / 2 }
+    setDragOrder(nextOrder)
+  }
+
   const cleanupDrag = () => {
+    if (rafId.current) {
+      cancelAnimationFrame(rafId.current)
+      rafId.current = 0
+    }
     document.body.classList.remove('note-dragging')
     document.removeEventListener('pointermove', onDocMove)
     document.removeEventListener('pointerup', onDocUp)
@@ -275,130 +377,43 @@ export function NotesPage() {
       oy: ev.clientY - rect.top,
       w: rect.width,
       h: rect.height,
-      targetId: null,
-      before: true,
     }
     dragRef.current = initial // 写穿：不等 React 提交，立即可读
     setDrag(initial)
+    initDragOrder()
+    // 交换防抖基线：从按下位置开始，拖动足够距离才触发第一次交换
+    lastSwapCenter.current = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
   }
 
-  /** FLIP 第一步：记录当前所有卡片位置（重排前） */
-  const captureFlip = () => {
-    const first = new Map<string, DOMRect>()
-    wallCards().forEach((el) => {
-      const id = el.dataset.noteId
-      if (id) first.set(id, el.getBoundingClientRect())
-    })
-    flipFirst.current = first
-  }
-
-  /** FLIP 第二步：重排后用 WAAPI 把卡片从旧位置平滑滑到新位置（原子动画，不写内联样式，不会残留卡死） */
-  const applyFlip = () => {
-    const first = flipFirst.current
-    flipFirst.current = null
-    if (!first) return
-    requestAnimationFrame(() => {
-      wallCards().forEach((el) => {
-        const id = el.dataset.noteId
-        const f = id ? first.get(id) : undefined
-        if (!f) return
-        const last = el.getBoundingClientRect()
-        const dx = f.left - last.left
-        const dy = f.top - last.top
-        if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return
-        // translate 属性与 transform: rotate() 自动叠加，动画结束自动回到原位
-        el.animate(
-          [{ translate: `${dx}px ${dy}px` }, { translate: '0px 0px' }],
-          { duration: 220, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
-        )
-      })
-    })
-  }
-
-  /** 计算落点：指针下的卡片优先；指针在间隙时用 ghost 矩形重叠面积兜底；仅同组有效 */
-  const findDropTarget = (
-    px: number,
-    py: number,
-    ghostRect: { x: number; y: number; w: number; h: number },
-    selfId: string,
-    pinned: boolean,
-  ): { targetId: string; before: boolean } | null => {
-    let targetEl: HTMLElement | null = null
-    // 主命中：指针位置
-    const els = document.elementsFromPoint(px, py)
-    for (const el of els) {
-      if (
-        el instanceof HTMLElement &&
-        el.classList.contains('note-card') &&
-        !el.closest('.note-ghost') &&
-        el.dataset.noteId &&
-        el.dataset.noteId !== selfId
-      ) {
-        targetEl = el
-        break
-      }
-    }
-    // 兜底：ghost 矩形与卡片重叠面积最大者
-    if (!targetEl) {
-      let bestArea = 0
-      for (const el of wallCards()) {
-        if (el.dataset.noteId === selfId) continue
-        const r = el.getBoundingClientRect()
-        const ix = Math.min(ghostRect.x + ghostRect.w, r.right) - Math.max(ghostRect.x, r.left)
-        const iy = Math.min(ghostRect.y + ghostRect.h, r.bottom) - Math.max(ghostRect.y, r.top)
-        if (ix <= 0 || iy <= 0) continue
-        if (ix * iy > bestArea) {
-          bestArea = ix * iy
-          targetEl = el
-        }
-      }
-    }
-    if (!targetEl) return null
-    const targetId = targetEl.dataset.noteId!
-    const targetNote = notesRef.current.find((n) => n.id === targetId)
-    if (!targetNote || targetNote.pinned !== pinned) return null
-    const rect = targetEl.getBoundingClientRect()
-    return { targetId, before: py < rect.top + rect.height / 2 }
-  }
-
-  /** 松手：一次性把卡片插到落点，并用 FLIP 平滑过渡（拖动中其他卡片不动，不会乱补位） */
+  /** 松手：把拖拽中的最终组内顺序提交到 store */
   const finalizeDrag = () => {
     const d = dragRef.current
-    if (d?.targetId) {
-      const arr = notesRef.current
-      const fromIdx = arr.findIndex((n) => n.id === d.id)
-      const targetIdx = arr.findIndex((n) => n.id === d.targetId)
-      if (fromIdx >= 0 && targetIdx >= 0 && arr[targetIdx].pinned === d.pinned) {
-        let toId: string | null
-        if (d.before) {
-          toId = d.targetId
-        } else {
-          // 插到 target 之后：在移除自身后的数组里找 target 后同组的下一张；没有则组尾
-          const next = arr.slice()
-          next.splice(fromIdx, 1)
-          const newTargetIdx = next.findIndex((n) => n.id === d.targetId)
-          toId = null
-          for (let i = newTargetIdx + 1; i < next.length; i++) {
-            if (next[i].pinned === d.pinned) {
-              toId = next[i].id
-              break
-            }
-          }
-        }
-        // 位置没变则不重排（例如拖回原位）
-        const simulated = arr.slice()
-        simulated.splice(fromIdx, 1)
-        const insertIdx = toId
-          ? simulated.findIndex((n) => n.id === toId)
-          : simulated.length
-        if (insertIdx !== fromIdx) {
-          captureFlip()
-          reorderNotes(d.id, toId)
-          applyFlip()
-        }
-      }
+    const order = dragOrderRef.current
+    if (d && order) {
+      const groupKey: 'pinned' | 'normal' = d.pinned ? 'pinned' : 'normal'
+      const orderedIds = order[groupKey]
+      const cur = notesRef.current.filter((n) => n.pinned === d.pinned).map((n) => n.id)
+      const changed =
+        cur.length !== orderedIds.length || cur.some((id, i) => id !== orderedIds[i])
+      if (changed) setNoteOrder(orderedIds)
     }
     cleanupDrag()
+    dragOrderRef.current = null
+    setDragOrder(null)
+  }
+
+  /** 每帧（rAF）：只做交换检测，与 ghost 跟手分离，避免 React 重渲染阻塞拖拽 */
+  const dragTick = () => {
+    rafId.current = 0
+    const d = dragRef.current
+    if (!d) return
+    applySwap()
+  }
+
+  /** 直接改 ghost 的 transform（走合成器，不触发 reflow），保证跟手 */
+  const moveGhost = (x: number, y: number) => {
+    const ghost = ghostRef.current
+    if (ghost) ghost.style.transform = `translate(${x}px, ${y}px)`
   }
 
   const onDocMove = (ev: PointerEvent) => {
@@ -415,16 +430,14 @@ export function NotesPage() {
     if (!d) return
     const x = ev.clientX - d.ox
     const y = ev.clientY - d.oy
-    const target = findDropTarget(ev.clientX, ev.clientY, { x, y, w: d.w, h: d.h }, d.id, d.pinned)
-    const next: DragState = {
-      ...d,
-      x,
-      y,
-      targetId: target?.targetId ?? null,
-      before: target?.before ?? true,
+    // 写穿最新位置
+    dragRef.current = { ...d, x, y }
+    // ghost 同步跟手（不触发 React 渲染）
+    moveGhost(x, y)
+    // 换位检测按帧节流，独立于 ghost 移动
+    if (!rafId.current) {
+      rafId.current = requestAnimationFrame(dragTick)
     }
-    dragRef.current = next // 写穿
-    setDrag(next)
   }
 
   const onDocUp = (ev: PointerEvent) => {
@@ -670,15 +683,12 @@ export function NotesPage() {
                 <Pin size={13} /> 置顶便签 <em>（{pinnedCount}）</em>
               </div>
               <div className="notes-wall">
-                {pinnedNotes.map((n, i) => (
+                {renderPinned.map((n, i) => (
                   <NoteCardView
                     key={n.id}
                     note={n}
                     index={i}
                     isDragging={drag?.id === n.id}
-                    dropMark={
-                      drag?.targetId === n.id ? (drag.before ? 'before' : 'after') : null
-                    }
                     dragDisabled={filteringActive || selectionMode}
                     selectionMode={selectionMode}
                     selected={selectedIds.has(n.id)}
@@ -699,15 +709,12 @@ export function NotesPage() {
                 {pinnedCount > 0 ? '其他灵感' : '最近灵感'} <em>（{normalCount}）</em>
               </div>
               <div className="notes-wall">
-                {normalNotes.map((n, i) => (
+                {renderNormal.map((n, i) => (
                   <NoteCardView
                     key={n.id}
                     note={n}
                     index={pinnedCount + i}
                     isDragging={drag?.id === n.id}
-                    dropMark={
-                      drag?.targetId === n.id ? (drag.before ? 'before' : 'after') : null
-                    }
                     dragDisabled={filteringActive || selectionMode}
                     selectionMode={selectionMode}
                     selected={selectedIds.has(n.id)}
@@ -729,14 +736,14 @@ export function NotesPage() {
           if (!note) return null
           return (
             <div
+              ref={ghostRef}
               className="note-ghost"
-              style={{ left: drag.x, top: drag.y, width: drag.w }}
+              style={{ transform: `translate(${drag.x}px, ${drag.y}px)`, width: drag.w }}
             >
               <NoteCardView
                 note={note}
                 index={0}
                 isDragging={false}
-                dropMark={null}
                 ghosted
                 dragDisabled
                 selectionMode={false}
@@ -912,7 +919,6 @@ function NoteCardView({
   note,
   index,
   isDragging,
-  dropMark,
   dragDisabled,
   ghosted = false,
   selectionMode,
@@ -924,8 +930,6 @@ function NoteCardView({
   note: Note
   index: number
   isDragging: boolean
-  /** 落点指示：插到本卡片前/后 */
-  dropMark: 'before' | 'after' | null
   dragDisabled: boolean
   /** 作为拖拽 ghost 渲染（不挂 data-note-id，避免命中检测误匹配） */
   ghosted?: boolean
@@ -939,8 +943,6 @@ function NoteCardView({
   return (
     <div
       className={`note-card ${note.pinned ? 'pinned' : ''} ${isDragging ? 'dragging' : ''} ${
-        dropMark === 'before' ? 'drop-before' : ''
-      } ${dropMark === 'after' ? 'drop-after' : ''} ${
         selectionMode ? (selected ? 'selected' : 'unselected') : ''
       }`}
       data-note-id={ghosted ? undefined : note.id}
