@@ -2059,6 +2059,71 @@ textarea {
   color: var(--ink-soft);
 }
 
+.notes-count.pinned-count {
+  color: var(--c-terracotta-fg, #b7553a);
+  background: var(--c-terracotta-bg, #f7d8c7);
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.notes-count.tag-count {
+  color: var(--c-mist-fg, #2f5f8a);
+  background: var(--c-mist-bg, #d3e4f0);
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 回收站入口按钮 */
+.trash-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  border: 1.5px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 12px;
+  cursor: pointer;
+  background: color-mix(in srgb, var(--paper-mid) 70%, transparent);
+  transition: all 0.18s ease;
+  position: relative;
+}
+
+.trash-btn:hover {
+  color: var(--c-terracotta-fg);
+  border-color: color-mix(in srgb, var(--c-terracotta-fg) 55%, transparent);
+  background: color-mix(in srgb, var(--c-terracotta-bg) 30%, transparent);
+}
+
+.trash-badge {
+  min-width: 17px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--c-terracotta-bg);
+  color: var(--c-terracotta-fg);
+  font-size: 10.5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+}
+
+/* 批量选择按钮 */
+.select-btn.active {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  font-weight: 600;
+}
+
 /* 输入区 */
 .notes-compose {
   border-radius: 18px;
@@ -2187,16 +2252,114 @@ textarea {
   background: var(--c-lavender-bg);
 }
 
-/* 便签墙：错落排列 */
+/* 标签筛选条 */
+.notes-tags-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 2px;
+  animation: riseIn 0.4s 0.1s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.note-tag-pill {
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  border: 1.5px solid var(--line);
+  background: color-mix(in srgb, var(--paper-mid) 70%, transparent);
+  color: var(--ink-soft);
+  padding: 5px 12px 5px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.18s ease;
+}
+
+.note-tag-pill:hover {
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.note-tag-pill.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  box-shadow: 0 4px 10px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.note-tag-num {
+  font-size: 10.5px;
+  opacity: 0.75;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 18%, transparent);
+}
+
+/* 分区 & 分隔线 */
+.notes-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.notes-section-title {
+  font-family: var(--font-display);
+  font-size: 15px;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 2px;
+}
+
+.notes-section-title em {
+  font-style: normal;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--ink-faint);
+  font-weight: 400;
+}
+
+.notes-divider {
+  margin: 8px 0 4px;
+  height: 1.5px;
+  border-radius: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--line) 15%,
+    var(--line) 85%,
+    transparent 100%
+  );
+  position: relative;
+}
+
+.notes-divider::after {
+  content: '✦ ✦ ✦';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--paper);
+  color: var(--ink-faint);
+  font-size: 10px;
+  letter-spacing: 4px;
+  padding: 0 12px;
+}
+
+/* 便签墙：响应式网格，行优先排列，保证视觉顺序与数组顺序一致，拖拽才有 predictable 的结果 */
 .notes-wall {
-  column-count: 3;
-  column-gap: 16px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  align-items: start;
   animation: riseIn 0.55s 0.16s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .note-card {
-  break-inside: avoid;
-  margin-bottom: 16px;
+  margin-bottom: 0;
   border-radius: 12px;
   padding: 14px 14px 10px;
   cursor: pointer;
@@ -2205,6 +2368,11 @@ textarea {
     transform 0.18s ease,
     box-shadow 0.18s ease;
   position: relative;
+  /* 手账错落倾斜：旋转角度由 --rot 提供（FLIP 动画会叠加 translate） */
+  transform: rotate(var(--rot, 0deg));
+  /* 阻止原生拖拽/文字选择抢占 pointer 事件流 */
+  -webkit-user-drag: none;
+  user-select: none;
 }
 
 .note-card::before {
@@ -2223,6 +2391,12 @@ textarea {
 
 .note-card:hover {
   transform: scale(1.02) rotate(0deg) !important;
+  box-shadow: 0 14px 30px var(--shadow-strong);
+}
+
+/* 拖拽进行中：暂停 hover 缩放，避免 !important 覆盖 FLIP 换位动画 */
+body.note-dragging .note-card:hover {
+  transform: rotate(var(--rot, 0deg)) !important;
   box-shadow: 0 14px 30px var(--shadow-strong);
 }
 
@@ -2256,12 +2430,84 @@ textarea {
   outline-offset: 2px;
 }
 
+/* 批量选择：选中圈 + 选中/未选中态 */
+.note-select-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.note-card.selected .note-select-badge {
+  background: var(--accent);
+  color: var(--paper);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.note-card.unselected .note-select-badge {
+  background: color-mix(in srgb, var(--paper) 70%, transparent);
+  color: var(--ink-faint);
+  opacity: 0.85;
+}
+
+.note-card.selected {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--accent) 30%, transparent);
+  transform: scale(1.02) rotate(0deg) !important;
+}
+
+.note-card.unselected {
+  opacity: 0.55;
+  filter: saturate(0.75);
+}
+
 .note-text {
   font-family: var(--font-serif);
   font-size: 14.5px;
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* #标签 在卡片正文内高亮 */
+.note-tag-inline {
+  display: inline-block;
+  padding: 0 6px;
+  margin: 0 1px;
+  border-radius: 6px;
+  background: color-mix(in srgb, currentColor 15%, transparent);
+  font-weight: 600;
+  font-size: 0.94em;
+  color: inherit;
+}
+
+/* 卡片底部的标签胶囊条 */
+.note-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  margin-top: 8px;
+}
+
+.note-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-ui);
+  font-size: 10.5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 20%, transparent);
+  color: inherit;
+  opacity: 0.9;
+  letter-spacing: 0.02em;
 }
 
 .note-foot {
@@ -2273,6 +2519,96 @@ textarea {
   font-family: var(--font-ui);
   font-size: 11px;
   opacity: 0.65;
+}
+
+.note-foot-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* 拖拽把手（默认半透明可见，桌面 hover 时更亮，移动端无需 hover 也能看到） */
+.note-grip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  color: inherit;
+  opacity: 0.6;
+  cursor: grab;
+  touch-action: none;
+  -webkit-user-drag: none;
+  user-select: none;
+  transition:
+    opacity 0.15s ease,
+    background 0.15s ease;
+}
+
+.note-card:hover .note-grip {
+  opacity: 1;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.note-grip:active {
+  cursor: grabbing;
+}
+
+/* 拖拽中的卡片：完全隐藏（保留占位高度），随拖动实时移动到目标位置，让位效果清晰 */
+.note-card.dragging {
+  visibility: hidden;
+  opacity: 0;
+  transform: scale(0.98) rotate(0deg) !important;
+}
+
+/* 拖拽 ghost（React 渲染的跟随指针副本容器） */
+.note-ghost {
+  position: fixed;
+  z-index: 600;
+  margin: 0;
+  pointer-events: none;
+  filter: saturate(1.05);
+}
+
+.note-ghost .note-card {
+  transform: rotate(var(--rot, 0deg)) scale(1.03);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.28);
+  cursor: grabbing;
+}
+
+/* 插入指示线 */
+.note-card.drop-before::after,
+.note-card.drop-after::after {
+  content: '';
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+  z-index: 3;
+  animation: dropLineIn 0.18s ease both;
+}
+
+.note-card.drop-before::after {
+  top: -7px;
+}
+
+.note-card.drop-after::after {
+  bottom: -7px;
+}
+
+@keyframes dropLineIn {
+  from {
+    opacity: 0;
+    transform: scaleX(0.4);
+  }
+  to {
+    opacity: 1;
+    transform: scaleX(1);
+  }
 }
 
 /* 空状态 */
@@ -2310,6 +2646,25 @@ textarea {
   resize: none;
 }
 
+/* 编辑弹层：元信息（创建/更新时间 + 标签） */
+.note-edit-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+.note-tags-inline-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
 .note-edit-actions {
   display: flex;
   align-items: center;
@@ -2325,20 +2680,319 @@ textarea {
   gap: 8px;
 }
 
+/* ghost-btn 变体：小号 & 强调色 */
+.ghost-btn.small {
+  padding: 5px 12px;
+  font-size: 12px;
+  border-radius: 999px;
+}
+
+.ghost-btn.accent {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+}
+.ghost-btn.accent:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+
+/* 浮动 Toast */
+.toast-float {
+  position: fixed;
+  left: 50%;
+  bottom: 90px;
+  transform: translateX(-50%);
+  background: color-mix(in srgb, var(--ink) 88%, transparent);
+  color: var(--paper);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  padding: 9px 18px;
+  border-radius: 999px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  z-index: 200;
+  animation: toastIn 0.25s ease both;
+  pointer-events: none;
+}
+
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 10px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+/* 回收站弹层 */
+.trash-modal {
+  width: min(560px, 94vw);
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.trash-list {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 2px;
+  min-height: 0;
+}
+
+.trash-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1.5px solid var(--line);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: color-mix(in srgb, var(--paper-mid) 55%, transparent);
+  border-left: 4px solid color-mix(in srgb, var(--c-mist-bg, #d3e4f0) 90%, transparent);
+}
+
+.trash-item[data-color='apricot'] {
+  border-left-color: var(--c-apricot-bg);
+}
+.trash-item[data-color='terracotta'] {
+  border-left-color: var(--c-terracotta-bg);
+}
+.trash-item[data-color='moss'] {
+  border-left-color: var(--c-moss-bg);
+}
+.trash-item[data-color='mist'] {
+  border-left-color: var(--c-mist-bg);
+}
+.trash-item[data-color='rose'] {
+  border-left-color: var(--c-rose-bg);
+}
+.trash-item[data-color='lavender'] {
+  border-left-color: var(--c-lavender-bg);
+}
+
+.trash-item-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.trash-item-body {
+  font-family: var(--font-serif);
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink);
+  white-space: pre-wrap;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.trash-item-meta {
+  margin-top: 5px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.trash-item-tags {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.trash-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.trash-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 12px;
+  margin-top: 6px;
+  border-top: 1.5px dashed var(--line);
+}
+
+.trash-hint {
+  font-family: var(--font-ui);
+  font-size: 11.5px;
+  color: var(--ink-faint);
+}
+
+.trash-empty {
+  padding: 36px 20px;
+}
+
+/* 底部批量操作栏（浮在 Tab 栏上方） */
+.bulk-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 78px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--paper-deep) 92%, transparent);
+  border: 1.5px solid var(--line);
+  box-shadow: 0 14px 34px var(--shadow-strong);
+  backdrop-filter: blur(10px);
+  z-index: 90;
+  animation: bulkBarIn 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+  max-width: calc(100vw - 24px);
+  flex-wrap: nowrap;
+}
+
+@keyframes bulkBarIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 14px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.bulk-bar-item {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 52px;
+  padding: 7px 8px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.bulk-bar-item:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+
+.bulk-bar-item.bulk-danger:hover {
+  background: color-mix(in srgb, var(--c-terracotta-fg) 14%, transparent);
+  color: var(--c-terracotta-fg);
+}
+
+.bulk-bar-item.bulk-close {
+  color: var(--ink);
+  min-width: 46px;
+  border-right: 1.5px solid var(--line);
+  border-radius: 12px 0 0 12px;
+}
+
+.bulk-bar-item.bulk-close:hover {
+  color: var(--c-terracotta-fg);
+  background: color-mix(in srgb, var(--c-terracotta-fg) 10%, transparent);
+}
+
+/* 批量换色色板 */
+.bulk-colors {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border-left: 1.5px solid var(--line);
+  border-right: 1.5px solid var(--line);
+}
+
+.bulk-color-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.14s ease;
+}
+
+.bulk-color-dot:hover {
+  transform: scale(1.25);
+}
+
+.bulk-color-dot[data-color='apricot'] {
+  background: var(--c-apricot-bg);
+}
+.bulk-color-dot[data-color='terracotta'] {
+  background: var(--c-terracotta-bg);
+}
+.bulk-color-dot[data-color='moss'] {
+  background: var(--c-moss-bg);
+}
+.bulk-color-dot[data-color='mist'] {
+  background: var(--c-mist-bg);
+}
+.bulk-color-dot[data-color='rose'] {
+  background: var(--c-rose-bg);
+}
+.bulk-color-dot[data-color='lavender'] {
+  background: var(--c-lavender-bg);
+}
+
 /* 响应式：便签墙列数 */
 @media (max-width: 900px) {
   .notes-wall {
-    column-count: 2;
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 
 @media (max-width: 560px) {
   .notes-wall {
-    column-count: 1;
+    grid-template-columns: 1fr;
   }
 
   .notes-compose-bar {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  /* 移动端：批量操作栏压缩文字、缩小色点 */
+  .bulk-bar {
+    bottom: 70px;
+    gap: 2px;
+    padding: 5px;
+    border-radius: 16px;
+  }
+
+  .bulk-bar-item {
+    min-width: 42px;
+    padding: 6px 4px;
+    font-size: 10px;
+  }
+
+  .bulk-bar-item span {
+    display: none;
+  }
+
+  .bulk-bar-item.bulk-close {
+    min-width: 34px;
+    font-size: 11px;
+  }
+
+  .bulk-colors {
+    gap: 4px;
+    padding: 0 5px;
+  }
+
+  .bulk-color-dot {
+    width: 15px;
+    height: 15px;
   }
 }
